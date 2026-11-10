@@ -33,7 +33,7 @@ jobs:
       - name: Setup Terraform Compilation Engine
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.0 # Aligned with project-tested lab requirements
+          terraform_version: 1.10.0 # Aligned with project-tested lab requirements
 
       - name: Check Terraform Formatting Layout (fmt -check)
         run: terraform -chdir=reference/terraform/lab fmt -check
