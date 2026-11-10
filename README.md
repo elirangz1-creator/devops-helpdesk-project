@@ -1,4 +1,4 @@
-# RT Helpdesk DevOps final project
+## RT Helpdesk DevOps final project
 
 A supplied Flask + PostgreSQL application for Real Time College. Students operate and deploy this app. **No Python, frontend or business-logic coding is required.**
 
