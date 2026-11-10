@@ -1,0 +1,137 @@
+name: rt-helpdesk
+
+x-db-env: &db-env
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: helpdesk
+  DB_USER: helpdesk_app
+  DB_PASSWORD: ${DB_PASSWORD:?Run python scripts/setup_env.py first}
+  DB_SSLMODE: disable
+
+x-app: &app
+  image: rt-helpdesk:${APP_VERSION:-local}
+  build:
+    context: .
+    target: runtime
+    args:
+      APP_VERSION: ${APP_VERSION:-local}
+  environment:
+    <<: *db-env
+    APP_VERSION: ${APP_VERSION:-local}
+    APP_ENV: ${APP_ENV:-development}
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [backend]
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: helpdesk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python scripts/setup_env.py first}
+      APP_DB_PASSWORD: ${DB_PASSWORD:?Run python scripts/setup_env.py first}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d helpdesk"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [backend]
+
+  migrate:
+    <<: *app
+    command: [flask, --app, app, init-db]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 4s
+      retries: 3
+    restart: unless-stopped
+
+  test-db:
+    image: postgres:16-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_DB: helpdesk_test
+      POSTGRES_USER: helpdesk_test
+      POSTGRES_PASSWORD: disposable-test-password
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U helpdesk_test -d helpdesk_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+
+  tests:
+    build:
+      context: .
+      target: test
+    profiles: [test]
+    environment:
+      DB_HOST: test-db
+      DB_PORT: "5432"
+      DB_NAME: helpdesk_test
+      DB_USER: helpdesk_test
+      DB_PASSWORD: disposable-test-password
+      DB_SSLMODE: disable
+      RUN_DB_TESTS: "1"
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks: [backend]
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles: [monitoring]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+    networks: [backend]
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    profiles: [monitoring]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run python scripts/setup_env.py first}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["127.0.0.1:3000:3000"]
+    restart: unless-stopped
+    networks: [backend]
+
+networks:
+  backend:
+volumes:
+  pgdata:
+  prometheus-data:
+  grafana-data:

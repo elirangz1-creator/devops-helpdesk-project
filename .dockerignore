@@ -1,0 +1,60 @@
+# ==============================================================================
+# DOCKER BUILD CONTEXT EXCLUSION CONTRACT
+# Prevents secrets, local metadata, and platform tools from leaking into image layers.
+# NOTE: Tests and requirements-dev.txt are kept to allow the "test" stage to build.
+# ==============================================================================
+
+# 1. Local Credentials & Environment Configuration Blocks
+.env
+*.env
+*.pem
+*.key
+secrets/
+
+# 2. Local Kubernetes Configs & Pipeline Cache Artifacts
+.kubeconfig
+kubeconfig*
+.pytest_cache/
+.htmlcov/
+htmlcov/
+.coverage
+.cache
+
+# 3. Language & Runtime Local Bytecodes
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+
+# 4. Storage Engine Dumps, Backups, and Temporary System Logs
+*.sql.gz
+*.dump
+*.bak
+*.log
+
+# 5. IaC State Trees (Terraform State and Working Trees)
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform.lock.hcl
+
+# 6. Global Platform/Engineering Modules (Not embedded inside app code)
+postgres/
+monitoring/
+scripts/
+reference/
+docs/
+README.md
+
+# 7. IDE Meta Trees and OS System Specific Files
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db

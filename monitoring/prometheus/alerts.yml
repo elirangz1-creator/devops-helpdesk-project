@@ -1,0 +1,34 @@
+groups:
+  - name: helpdesk
+    rules:
+      - alert: HelpdeskTargetDown
+        expr: up{job="helpdesk"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Helpdesk metrics target is unreachable
+          description: Check the API process, container and network path.
+      - alert: HelpdeskDatabaseUnavailable
+        expr: helpdesk_database_up{job="helpdesk"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Helpdesk cannot access its database or tickets table
+          description: Check PostgreSQL, credentials, schema and network connectivity.
+      - alert: HelpdeskHighErrorRate
+        expr: |
+          (
+            sum by (environment) (rate(helpdesk_http_requests_total{job="helpdesk",route=~"/api/.*",status=~"5.."}[5m]))
+            /
+            clamp_min(sum by (environment) (rate(helpdesk_http_requests_total{job="helpdesk",route=~"/api/.*"}[5m])), 0.001)
+          ) > 0.05
+          and on (environment)
+          sum by (environment) (increase(helpdesk_http_requests_total{job="helpdesk",route=~"/api/.*"}[5m])) >= 20
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five percent API errors
+          description: At least twenty requests occurred in the last five minutes. Inspect logs before restarting services.

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RT Helpdesk</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<main>
+  <header><div><p class="eyebrow">REAL TIME COLLEGE · DEVOPS LAB</p><h1>RT Helpdesk</h1></div><span class="version">Version {{ version }}</span></header>
+  <p class="intro">Create a support ticket, follow its status and keep the service running. Use fictional data only.</p>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <section aria-labelledby="create-heading">
+    <h2 id="create-heading">New ticket</h2>
+    <form id="ticket-form">
+      <label>Your name<input name="requester" required maxlength="80" placeholder="Demo Student"></label>
+      <label>Subject<input name="title" required maxlength="120" placeholder="What needs attention?"></label>
+      <label class="full">Description<textarea name="description" maxlength="2000" rows="3"></textarea></label>
+      <button type="submit">Create ticket</button>
+    </form>
+  </section>
+  <section aria-labelledby="list-heading">
+    <div class="section-heading"><h2 id="list-heading">Support tickets</h2><button id="refresh" class="secondary">Refresh</button></div>
+    <div id="tickets"></div>
+    <div class="pagination"><button id="previous" class="secondary">Previous</button><span id="page"></span><button id="next" class="secondary">Next</button></div>
+  </section>
+  <footer><a href="/healthz">Liveness</a><a href="/readyz">Readiness</a><a href="/version">Version</a><a href="/metrics">Metrics</a></footer>
+</main>
+</body></html>

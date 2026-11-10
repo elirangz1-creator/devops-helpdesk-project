@@ -1,0 +1,11 @@
+groups:
+- name: helpdesk
+  rules:
+  - alert: HelpdeskDatabaseUnavailable
+    expr: helpdesk_database_up{job="helpdesk"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: Helpdesk cannot access its database or tickets table
+      description: Check PostgreSQL, credentials, schema and network connectivity.

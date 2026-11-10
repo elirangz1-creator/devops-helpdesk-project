@@ -1,0 +1,92 @@
+pipeline {
+  agent { label 'helpdesk-build' }
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    skipDefaultCheckout(true)
+    timeout(time: 45, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '15'))
+  }
+  environment {
+    // Replace these three values before configuring the trusted-main job.
+    IMAGE_REPOSITORY = 'ghcr.io/replace-owner/rt-helpdesk'
+    REGISTRY_HOST = 'ghcr.io'
+    APP_HOST = '10.42.1.10'
+    COMPOSE_PROJECT_NAME = "rt-ci-${BUILD_NUMBER}"
+  }
+  stages {
+    stage('Checkout trusted main') {
+      steps {
+        checkout scm
+        sh '''
+          set -eu
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+        '''
+        script { env.RELEASE_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim() }
+      }
+    }
+    stage('Required checks on this SHA') {
+      steps {
+        sh '''
+          set -eu
+          test -f .env || python3 scripts/setup_env.py
+          docker compose --profile test run --build --rm tests
+        '''
+      }
+    }
+    stage('Build image') {
+      steps {
+        sh '''
+          set -eu
+          docker build --target runtime --build-arg APP_VERSION="$RELEASE_SHA" \
+            -t "$IMAGE_REPOSITORY:$RELEASE_SHA" .
+        '''
+      }
+    }
+    stage('Publish immutable release') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'registry-push', usernameVariable: 'REGISTRY_USER', passwordVariable: 'REGISTRY_TOKEN')]) {
+          sh '''
+            set +x
+            set -eu
+            export DOCKER_CONFIG=$(mktemp -d)
+            trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+            printf '%s' "$REGISTRY_TOKEN" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+            docker push "$IMAGE_REPOSITORY:$RELEASE_SHA"
+            docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPOSITORY:$RELEASE_SHA" > release-image.txt
+          '''
+        }
+        script { env.RELEASE_IMAGE = readFile('release-image.txt').trim() }
+        archiveArtifacts artifacts: 'release-image.txt', fingerprint: true
+      }
+    }
+    stage('Deploy and verify') {
+      steps { deployRelease('helpdesk') }
+    }
+  }
+  post {
+    always {
+      sh 'docker compose --profile test down --volumes --remove-orphans || true'
+      // This is an isolated CI Compose project, never the demo database.
+      deleteDir()
+    }
+  }
+}
+def deployRelease(String target) {
+  withEnv(["TARGET_NAMESPACE=${target}"]) {
+    withCredentials([
+      sshUserPrivateKey(credentialsId: 'app-deploy-ssh', keyFileVariable: 'DEPLOY_KEY', usernameVariable: 'DEPLOY_USER'),
+      file(credentialsId: 'app-known-hosts', variable: 'KNOWN_HOSTS')
+    ]) {
+      sh '''
+        set +x
+        set -eu
+        ssh -i "$DEPLOY_KEY" -o BatchMode=yes -o IdentitiesOnly=yes \
+          -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" \
+          "$DEPLOY_USER@$APP_HOST" bash -s -- "$TARGET_NAMESPACE" "$RELEASE_IMAGE" "$RELEASE_SHA" \
+          < reference/scripts/release.sh
+      '''
+    }
+  }
+}

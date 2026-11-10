@@ -1,0 +1,55 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'up{job="helpdesk",instance="api:8000",environment="development"}'
+        values: '1 0x8 1x12'
+      - series: 'helpdesk_database_up{job="helpdesk",instance="api:8000",environment="development"}'
+        values: '1 0x8 1x12'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HelpdeskTargetDown
+        exp_alerts:
+          - exp_labels:
+              job: helpdesk
+              instance: api:8000
+              environment: development
+              severity: critical
+            exp_annotations:
+              summary: Helpdesk metrics target is unreachable
+              description: Check the API process, container and network path.
+      - eval_time: 2m
+        alertname: HelpdeskDatabaseUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: helpdesk
+              instance: api:8000
+              environment: development
+              severity: critical
+            exp_annotations:
+              summary: Helpdesk cannot access its database or tickets table
+              description: Check PostgreSQL, credentials, schema and network connectivity.
+      - eval_time: 3m
+        alertname: HelpdeskTargetDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: HelpdeskDatabaseUnavailable
+        exp_alerts: []
+  - interval: 15s
+    input_series:
+      - series: 'helpdesk_http_requests_total{job="helpdesk",environment="development",route="/api/tickets",method="GET",status="200"}'
+        values: '0+90x30'
+      - series: 'helpdesk_http_requests_total{job="helpdesk",environment="development",route="/api/tickets",method="GET",status="503"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: HelpdeskHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              environment: development
+              severity: warning
+            exp_annotations:
+              summary: More than five percent API errors
+              description: At least twenty requests occurred in the last five minutes. Inspect logs before restarting services.

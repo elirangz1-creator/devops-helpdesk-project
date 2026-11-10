@@ -1,0 +1,5 @@
+bucket = "REPLACE-globally-unique-state-bucket"
+key = "rt-helpdesk/lab.tfstate"
+region = "eu-west-1"
+encrypt = true
+use_lockfile = true

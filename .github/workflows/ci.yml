@@ -1,0 +1,91 @@
+# ==============================================================================
+# UPDATED GITHUB ACTIONS CI WORKFLOW CONTRACT
+# Preserves original application tests and adds automated Terraform validation layers.
+# ==============================================================================
+name: App CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # NEW ADDITION: INFRASTRUCTURE AS CODE (IaC) SECURITY & SYNTAX VALIDATION
+  # Evaluates Terraform definitions without requiring remote AWS state backend access.
+  # ----------------------------------------------------------------------------
+  terraform-checks:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted code repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Terraform Compilation Engine
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0 # Aligned with project-tested lab requirements
+
+      - name: Check Terraform Formatting Layout (fmt -check)
+        run: terraform -chdir=reference/terraform/lab fmt -check
+
+      # REQUIRED REQ: Initializing with backend=false completely skips remote AWS S3 handshakes
+      - name: Initialize Localized Terraform Tree Safely
+        run: terraform -chdir=reference/terraform/lab init -backend=false
+
+      - name: Validate Logical Structural Consistency
+        run: terraform -chdir=reference/terraform/lab validate
+
+  # ----------------------------------------------------------------------------
+  # ORIGINAL JOB: POSTGRESQL AND API COMPLIANCE SUITE (UNTOUCHED)
+  # Runs original functional pytest assertions and validates the runtime Docker target.
+  # ----------------------------------------------------------------------------
+  tests:
+    name: PostgreSQL and API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_DB: helpdesk_test
+          POSTGRES_USER: helpdesk_test
+          POSTGRES_PASSWORD: disposable-test-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U helpdesk_test -d helpdesk_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: helpdesk_test
+      DB_USER: helpdesk_test
+      DB_PASSWORD: disposable-test-password
+      DB_SSLMODE: disable
+      RUN_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q --junitxml=test-results/results.xml
+      - name: Build runtime image without publishing it
+        run: docker build --target runtime -t rt-helpdesk:ci .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/results.xml
