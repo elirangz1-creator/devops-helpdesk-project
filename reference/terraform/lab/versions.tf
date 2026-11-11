@@ -6,5 +6,5 @@ provider "aws" { region = var.region }
 variable "region" { type = string }
 
 terraform {
-  backend "s3" {}
+  backend "s3" {} # Temporarily switched to "local" during initial bootstrap before S3 state migration
 }
