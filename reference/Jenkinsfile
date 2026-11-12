@@ -9,9 +9,9 @@ pipeline {
   }
   environment {
     // Replace these three values before configuring the trusted-main job.
-    IMAGE_REPOSITORY = 'ghcr.io/replace-owner/rt-helpdesk'
+    IMAGE_REPOSITORY = 'ghcr.io/elirangz1-creator/rt-helpdesk'
     REGISTRY_HOST = 'ghcr.io'
-    APP_HOST = '10.42.1.10'
+    APP_HOST = '10.42.1.9'
     COMPOSE_PROJECT_NAME = "rt-ci-${BUILD_NUMBER}"
   }
   stages {
