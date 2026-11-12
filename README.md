@@ -140,3 +140,5 @@ The initialization retries temporary connection failures up to ten times. `schem
 Python dependencies are pinned in `requirements.txt` and `requirements-dev.txt`. PostgreSQL uses the maintained `16-bookworm` tag; Python uses `3.12-slim-bookworm`. These tags can receive updates. Record resolved digests in your release evidence. Prometheus and Grafana use explicit versions in Compose. Review and scan versions before running a class.
 
 See [VALIDATION.md](docs/VALIDATION.md) for what was actually executed while preparing this package and what still requires a Docker/AWS environment.
+
+Verified end-to-end automated release pipeline.
