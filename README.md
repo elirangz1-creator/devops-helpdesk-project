@@ -349,7 +349,7 @@ Scaled PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset d
 
 ---
 
-## 7. Quick Access & SSH Tunneling Guide
+##  Quick Access & SSH Tunneling Guide
 
 Because no application, database, CI, or monitoring ports are exposed to the public internet, all web interfaces are accessed securely via **SSH Local Port Forwarding**.
 
