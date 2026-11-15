@@ -14,11 +14,11 @@ variable "ssh_public_key" { type = string }
 variable "backup_bucket" { type = string }
 variable "ci_instance_type" {
   type    = string
-  default = "t3.large"
+  default = "t3.micro"
 }
 variable "app_instance_type" {
   type    = string
-  default = "t3.xlarge"
+  default = "t3.small"
 }
 variable "budget_email" { type = string }
 variable "monthly_budget_usd" {
