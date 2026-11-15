@@ -1,4 +1,6 @@
-## RT-Helpdesk — End-to-End Cloud-Native DevOps Project
+cd ~/devops/projects/helpdesk-project && \
+cat << 'EOF' > README.md
+# RT-Helpdesk — End-to-End Cloud-Native DevOps Project
 
 A production-grade deployment and automation pipeline for the **RT-Helpdesk** ticketing application. This project demonstrates Infrastructure as Code (IaC), container hardening, Kubernetes orchestration, automated CI/CD with Jenkins, real-time observability with Prometheus & Grafana, automated email alerting via Alertmanager, and verified disaster recovery on AWS.
 
@@ -35,7 +37,156 @@ helpdesk-project/
 
 ---
 
-## 3. Security & Cost Optimization Highlights
+## 3. Complete From-Scratch Build Guide (Zero to Production)
+
+Follow these step-by-step instructions to rebuild the entire environment from scratch on a clean AWS account.
+
+### Step 1: Bootstrap Terraform Remote State (S3)
+Create the encrypted, versioned S3 bucket used to store Terraform state files.
+```bash
+cd reference/terraform/bootstrap
+terraform init
+terraform apply -auto-approve
+# Note the output bucket name (e.g., helpdesk-tfstate-<suffix>)
+```
+
+### Step 2: Provision AWS Cloud Infrastructure (`lab`)
+1. Create `backend.hcl` and `terraform.tfvars` inside `reference/terraform/lab`:
+   ```bash
+   cd ../lab
+   MY_IP=$(curl -s ifconfig.me)
+
+   cat << HCL > backend.hcl
+   bucket       = "<YOUR_TFSTATE_BUCKET_NAME>"
+   key          = "lab/terraform.tfstate"
+   region       = "us-east-1"
+   encrypt      = true
+   use_lockfile = true
+   HCL
+
+   cat << VARS > terraform.tfvars
+   aws_region        = "us-east-1"
+   admin_cidr        = "${MY_IP}/32"
+   ssh_public_key    = "$(cat ~/.ssh/id_ed25519.pub)"
+   ci_instance_type  = "t3.micro"
+   app_instance_type = "t3.small"
+   backup_bucket_name = "helpdesk-backups-egetz-2026"
+   VARS
+   ```
+2. Initialize and apply the Terraform configuration:
+   ```bash
+   terraform init -backend-config=backend.hcl
+   terraform plan -out=lab.plan
+   terraform apply lab.plan
+   ```
+3. Retrieve the public and private IPs of both EC2 instances:
+   ```bash
+   aws ec2 describe-instances --region us-east-1 \
+     --query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value|[0],PublicIpAddress,PrivateIpAddress,State.Name]" \
+     --output table
+   ```
+
+### Step 3: Bootstrap Application Server (Docker, Kind & Kubernetes)
+1. Copy the repository files to the App EC2 instance (`<APP_IP>`):
+   ```bash
+   cd ~/devops/projects/helpdesk-project
+   ssh ubuntu@<APP_IP> "sudo mkdir -p /opt/rt-helpdesk && sudo chown -R ubuntu:ubuntu /opt/rt-helpdesk"
+   scp -r app reference ubuntu@<APP_IP>:/opt/rt-helpdesk/
+   ```
+2. Install Docker, `kubectl`, and `kind` on `<APP_IP>`, and initialize the Kubernetes cluster:
+   ```bash
+   ssh ubuntu@<APP_IP> "
+     sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli
+     sudo usermod -aG docker ubuntu
+     curl -Lo ./kind https://k8s.io
+     chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+     curl -LO https://k8s.io
+     chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+     kind create cluster --name helpdesk
+   "
+   ```
+3. Deploy Namespaces, Application, PostgreSQL Database, and Monitoring Stack:
+   ```bash
+   ssh ubuntu@<APP_IP> "
+     cd /opt/rt-helpdesk
+     kubectl create namespace helpdesk
+     kubectl create namespace monitoring
+     kubectl apply -f reference/k8s/jenkins-rbac.yaml
+     kubectl apply -f reference/k8s/app.yaml
+     kubectl -n monitoring create configmap prometheus-config \
+       --from-file=prometheus.yml=reference/k8s/prometheus.yml \
+       --from-file=alerts.yml=reference/k8s/alerts.yml
+     kubectl apply -f reference/k8s/monitoring.yaml
+   "
+   ```
+
+### Step 4: Configure Alertmanager & Gmail SMTP Notifications
+1. Create the Kubernetes Secret storing your 16-character Google App Password:
+   ```bash
+   ssh ubuntu@<APP_IP> "
+     kubectl -n monitoring create secret generic alertmanager-smtp \
+       --from-literal=smtp_password='<YOUR_16_CHAR_GOOGLE_APP_PASSWORD>'
+   "
+   ```
+2. Deploy Alertmanager and reload Prometheus:
+   ```bash
+   ssh ubuntu@<APP_IP> "
+     kubectl apply -f /opt/rt-helpdesk/reference/k8s/alertmanager.yaml
+     kubectl -n monitoring rollout restart deployment/prometheus
+     kubectl -n monitoring get pods
+   "
+   ```
+
+### Step 5: Bootstrap CI Server (Jenkins & Build Agent)
+1. Install Java, Jenkins, and Docker on the CI EC2 instance (`<CI_IP>`):
+   ```bash
+   ssh ubuntu@<CI_IP> "
+     sudo apt-get update && sudo apt-get install -y fontconfig openjdk-17-jre docker.io git
+     sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://jenkins.io
+     echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://jenkins.io binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+     sudo apt-get update && sudo apt-get install -y jenkins
+     sudo systemctl enable --now jenkins
+   "
+   ```
+2. Create the dedicated `buildagent` user and configure SSH keys between Jenkins and `<APP_IP>`:
+   ```bash
+   ssh ubuntu@<CI_IP> "
+     sudo useradd -m -s /bin/bash buildagent
+     sudo usermod -aG docker buildagent
+     sudo -u jenkins ssh-keygen -t ed25519 -f /var/lib/jenkins/.ssh/id_ed25519 -N ''
+     sudo mkdir -p /home/buildagent/.ssh
+     sudo cp /var/lib/jenkins/.ssh/id_ed25519.pub /home/buildagent/.ssh/authorized_keys
+     sudo chown -R buildagent:buildagent /home/buildagent/.ssh
+     sudo chmod 700 /home/buildagent/.ssh && sudo chmod 600 /home/buildagent/.ssh/authorized_keys
+   "
+   ```
+3. Copy Jenkins public key to `<APP_IP>` and extract the restricted `kubeconfig` for Jenkins deployments:
+   ```bash
+   JENKINS_PUB=$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub")
+   ssh ubuntu@<APP_IP> "echo '$JENKINS_PUB' >> ~/.ssh/authorized_keys"
+   ```
+4. Access Jenkins via SSH Tunnel (`ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N`), unlock it using `sudo cat /var/lib/jenkins/secrets/initialAdminPassword`, add the `helpdesk-build` node, and configure your GHCR credentials and `helpdesk-release` Pipeline job.
+
+### Step 6: Verification, Backups & Teardown
+1. **Generate Traffic & Verify Dashboards:**
+   ```bash
+   python3 reference/scripts/traffic.py --seconds 180
+   ```
+2. **Run S3 Backup & Isolated Restore Check:**
+   ```bash
+   ssh ubuntu@<APP_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026"
+   aws s3 ls s3://helpdesk-backups-egetz-2026/backups/helpdesk/
+   ```
+3. **Teardown Everything After Grading (Zero Cost):**
+   ```bash
+   aws s3 rm s3://helpdesk-backups-egetz-2026 --recursive
+   cd ~/devops/projects/helpdesk-project/reference/terraform/lab
+   terraform destroy -auto-approve
+   ```
+
+---
+
+## 4. Security & Cost Optimization Highlights
 
 * **Zero Public App Ports:** No HTTP/HTTPS, database, Jenkins, Prometheus, or Grafana ports are exposed to the public internet. All administrative access uses encrypted **SSH Local Port Forwarding**.
 * **Secrets Management:** Sensitive credentials (such as Gmail SMTP App Passwords and GHCR tokens) are never committed to Git; they are injected at runtime using **Kubernetes Secrets** (`readOnly: true` volume mounts) and Jenkins Credentials.
@@ -44,7 +195,7 @@ helpdesk-project/
 
 ---
 
-## 4. Alertmanager & Gmail SMTP Configuration
+## 5. Alertmanager & Gmail SMTP Configuration
 
 To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`://gmail.com`) using TLS encryption and a dedicated **Google App Password**.
 
@@ -74,7 +225,7 @@ alerting:
 
 ---
 
-## 5. Operational Exercises & Verification Evidence
+## 6. Operational Exercises & Verification Evidence
 
 ### Exercise 1: End-to-End Application & Observability Health
 Verified that the **RT-Helpdesk** web application is live with the latest Git commit SHA badge, Prometheus actively scrapes the `/metrics` endpoint (`UP`), and Grafana visualizes real-time request rates and target health.
@@ -136,21 +287,3 @@ Integrated **Prometheus Alertmanager** with Gmail SMTP (`://gmail.com`) using a 
   ![Alertmanager Firing Email](docs/images/07-email-alert-firing.png)
 * **Resolved Recovery Email Notification:**
   ![Alertmanager Resolved Email](docs/images/08-email-alert-resolved.png)
-
----
-
-## 6. Quick Operations & Cost-Control Commands
-
-```bash
-# Start EC2 instances and retrieve current public IPs
-aws ec2 start-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
-
-# Open SSH tunnels to Application (8000), Grafana (3000), and Prometheus (9090)
-ssh -L 8000:127.0.0.1:8000 -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 ubuntu@<APP_IP>
-
-# Open SSH tunnel to Jenkins (8080)
-ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
-
-# Stop EC2 instances when idle to eliminate hourly compute charges
-aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
-```
