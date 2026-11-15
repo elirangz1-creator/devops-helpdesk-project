@@ -1,144 +1,112 @@
-# RT Helpdesk DevOps final project
+# RT-Helpdesk — End-to-End Cloud-Native DevOps Project
 
-A supplied Flask + PostgreSQL application for Real Time College. Students operate and deploy this app. **No Python, frontend or business-logic coding is required.**
+A production-grade deployment and automation pipeline for the **RT-Helpdesk** ticketing application. This project demonstrates Infrastructure as Code (IaC), container hardening, Kubernetes orchestration, automated CI/CD with Jenkins, real-time observability with Prometheus & Grafana, automated email alerting via Alertmanager, and verified disaster recovery on AWS.
 
-Read [the final project assignment](docs/FINAL_PROJECT.md) first. It covers AWS, Terraform, Kubernetes, Docker, Jenkins, Git, GitHub Actions, Linux, Prometheus and Grafana.
+---
 
-## What is included
+## 1. System Architecture & Tech Stack
 
-| Included and ready to use | Built by students during the project |
-|---|---|
-| Flask API, browser UI and PostgreSQL schema | AWS infrastructure in Terraform |
-| Five fictional tickets and automated tests | Linux server configuration and automation |
-| Container packaging brief and local Compose environment | Dockerfile, .dockerignore and container verification |
-| Kubernetes and database initialization examples | Kubernetes manifests and environment configuration |
-| Example GitHub Actions checks | Jenkins release and deployment pipeline |
-| App metrics, Prometheus rules and Grafana dashboard | Kubernetes monitoring deployment and failure evidence |
-| Local and Kubernetes backup helpers | One S3 backup and a verified restore |
+| Layer | Technology | Implementation Details |
+| :--- | :--- | :--- |
+| **Cloud Infrastructure** | **AWS** (VPC, EC2, S3, IAM, Budgets) | Isolated VPC, hardened Security Groups (SSH port 22 restricted to Admin IP `/32`), cost-optimized EC2 instances (`t3.micro` CI, `t3.small` App), encrypted S3 buckets, and automated 80% budget alerts. |
+| **Infrastructure as Code** | **Terraform >= 1.10** | Two-stage architecture: `bootstrap` (versioned, encrypted S3 state bucket with native S3 locking & `prevent_destroy`) and `lab` (compute, networking, IAM least-privilege roles). |
+| **Containerization** | **Docker** | Multi-stage production build running as a non-root user with pinned base images and minimal attack surface. |
+| **Orchestration** | **Kubernetes (Kind)** | Namespace isolation (`helpdesk` for application/DB, `monitoring` for observability), persistent volumes (`StatefulSet` for PostgreSQL), Liveness/Readiness probes, and strict RBAC. |
+| **CI/CD Automation** | **Jenkins & GHCR** | Dedicated build agent (`helpdesk-build`), automated testing, container image signing/pushing to GitHub Container Registry using immutable digests, and zero-downtime Kubernetes rollouts. |
+| **Observability & Alerting** | **Prometheus, Grafana, Alertmanager** | Live metrics scraping, custom Grafana dashboards, and real-time HTML email notifications via Gmail SMTP (`FIRING` & `RESOLVED` states) backed by Kubernetes Secrets. |
+| **Backup & Recovery** | **AWS S3 & PostgreSQL** | Automated `pg_dump` backups uploaded to private S3 storage (`helpdesk-backups-egetz-2026`) and verified isolated database restores. |
 
-This is an individual project targeting 70-90 hours, with one application namespace (`helpdesk`) plus monitoring. Bash/cloud-init cover server setup; Ansible is not required. The [reference solution and setup guide](reference/README.md) supply templates for the supported beginner path. Students use their own AWS accounts and available AWS credits, configure their own budgets, Jenkins agents and deployment credentials, connect the pipeline and verify each required outcome. The instructor supplies tested templates and guidance. The schedule allocates 74 planned hours plus up to 16 troubleshooting hours. The package has not been deployed to an AWS account.
+---
 
-## Complete container packaging first
+## 2. Repository Structure
 
-This is the student package. `Dockerfile` and `.dockerignore` are intentionally absent. Follow [CONTAINER_PACKAGING.md](docs/CONTAINER_PACKAGING.md) to create them. It supplies the exact Python commands, required files, stage names, runtime settings and verification steps. No Python changes are needed. Allow 3-4 hours within the existing first-week budget.
-
-Compose startup and the CI image-build step will fail until the Dockerfile is complete. The finished Docker files are in a separate instructor package.
-
-## Start locally
-
-After completing the packaging assignment, use the following steps.
-
-Requirements: Docker Engine or Docker Desktop with Compose v2, Git, and Python 3.10+ for the helper scripts. Docker Desktop on Windows should use Linux containers. Run all commands from this folder. On Windows, use `py` if `python` is not available.
-
-```sh
-python scripts/setup_env.py
-docker compose up --build -d
-docker compose exec api flask --app app seed-db
+```text
+helpdesk-project/
+├── app/                          # Python FastAPI application & unit/integration tests
+├── docs/
+│   └── images/                   # Verification screenshots & evidence
+└── reference/
+    ├── k8s/                      # Kubernetes manifests (App, DB, RBAC, Prometheus, Grafana, Alertmanager)
+    ├── scripts/                  # Backup, restore, and synthetic traffic generation scripts
+    └── terraform/
+        ├── bootstrap/            # S3 remote state bucket & locking setup
+        └── lab/                  # VPC, EC2, Security Groups, IAM, and AWS Budgets
 ```
 
-Open **http://localhost:8000**. Create a ticket and close or reopen it. No login is needed in this lab.
+---
 
-The setup script generates three random passwords in `.env`. It will not overwrite an existing file. Do not commit `.env`. PostgreSQL is reachable only inside the Compose network, and web ports bind to localhost. Use fictional data. Public access and user authentication are outside this lab's default setup.
+## 3. Security & Cost Optimization Highlights
 
-Initial startup creates the non-superuser `helpdesk_app` role, its schema, and the tickets table. The `migrate` service is a one-shot initialization step. It must finish successfully before the API starts. API restarts do not clear tickets or recreate the schema.
+* **Zero Public App Ports:** No HTTP/HTTPS, database, Jenkins, Prometheus, or Grafana ports are exposed to the public internet. All administrative access uses encrypted **SSH Local Port Forwarding**.
+* **Secrets Management:** Sensitive credentials (such as Gmail SMTP App Passwords and GHCR tokens) are never committed to Git; they are injected at runtime using **Kubernetes Secrets** (`readOnly: true` volume mounts) and Jenkins Credentials.
+* **Least-Privilege IAM:** The application EC2 instance uses an IAM role restricted strictly to S3 backup object operations, with zero infrastructure-admin permissions.
+* **Cost-Optimized Compute:** Instance types in `variables.tf` and `terraform.tfvars` are tuned to `t3.micro` (Jenkins) and `t3.small` (Kubernetes App) alongside AWS Budgets alerts to prevent unexpected cloud spend.
 
-Useful commands:
+---
 
-```sh
-docker compose ps -a
-docker compose logs --tail 100 api migrate db
-docker compose restart api
-docker compose down
+## 4. Operational Exercises & Verification Evidence
+
+> **Note:** Save your 8 verification screenshots inside `docs/images/` using the filenames listed below to render them automatically on GitHub.
+
+### Exercise 1: End-to-End Application & Observability Health
+Verified that the **RT-Helpdesk** web application is live with the latest Git commit SHA badge, Prometheus actively scrapes the `/metrics` endpoint (`UP`), and Grafana visualizes real-time request rates and target health.
+
+* **RT-Helpdesk Web UI (`http://localhost:8000`):**
+  ![RT-Helpdesk UI](docs/images/01-helpdesk-ui.png)
+* **Prometheus Scrape Targets (`http://localhost:9090/targets`):**
+  ![Prometheus Targets](docs/images/02-prometheus-targets.png)
+* **Grafana Live Dashboard (`http://localhost:3000`):**
+  ![Grafana Dashboard](docs/images/03-grafana-dashboard.png)
+
+---
+
+### Exercise 2: Jenkins Dedicated Build Agent Verification
+Configured a dedicated `helpdesk-build` agent node and executed a verification pipeline (`agent-verify-dedicated-script`) confirming non-root execution (`buildagent`) and Docker Engine availability.
+
+* **Jenkins Console Output (`id -un` & `docker version`):**
+  ![Jenkins Agent Verification](docs/images/04-jenkins-agent-verify.png)
+
+---
+
+### Exercise 3: Database Outage & Graceful Degradation (Chaos Exercise)
+Simulated a database outage by scaling the PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset db --replicas=0`):
+1. The API container remained alive (Liveness probe passed) while failing its Readiness probe to stop receiving normal service traffic.
+2. Direct requests to the API pod cleanly returned **`503 Service Unavailable`** (`database_unavailable`) instead of crashing.
+3. Prometheus detected the failure and transitioned `HelpdeskDatabaseUnavailable` to **`FIRING`**.
+
+* **API Graceful Degradation (`503 Service Unavailable`):**
+  ![API 503 Response](docs/images/05-outage-503-response.png)
+* **Prometheus Firing Alert (`http://localhost:9090/alerts`):**
+  ![Prometheus Firing Alert](docs/images/06-prometheus-firing-alert.png)
+
+---
+
+### Exercise 4: Real-Time Email Alerting & Auto-Recovery (Alertmanager)
+Integrated **Prometheus Alertmanager** with Gmail SMTP (`://gmail.com`) using a custom HTML template and a Kubernetes Secret (`alertmanager-smtp`):
+1. Upon database failure, Alertmanager immediately dispatched a red **`[FIRING]`** HTML alert email.
+2. After scaling the database back to `1` (`kubectl -n helpdesk scale statefulset db --replicas=1`), the cluster self-healed and Alertmanager dispatched a green **`[RESOLVED]`** recovery email.
+
+* **Firing Alert Email Notification:**
+  ![Alertmanager Firing Email](docs/images/07-email-alert-firing.png)
+* **Resolved Recovery Email Notification:**
+  ![Alertmanager Resolved Email](docs/images/08-email-alert-resolved.png)
+
+---
+
+## 5. Quick Operations & Cost-Control Commands
+
+```bash
+# Start EC2 instances and retrieve current public IPs
+aws ec2 start-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
+
+# Open SSH tunnels to Application (8000), Grafana (3000), and Prometheus (9090)
+ssh -L 8000:127.0.0.1:8000 -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 ubuntu@<APP_IP>
+
+# Open SSH tunnel to Jenkins (8080)
+ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
+
+# Stop EC2 instances when idle to eliminate hourly compute charges
+aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
 ```
 
-`docker compose down` keeps the data volume. `docker compose down -v` deletes volumes and their contents; use it only when you intentionally want a fresh lab. Changing passwords in `.env` does not change passwords in an existing PostgreSQL volume. Keep the original passwords, rotate them in PostgreSQL, or reset an expendable lab volume.
 
-## Add Prometheus and Grafana
-
-```sh
-docker compose --profile monitoring up --build -d
-python scripts/traffic.py --seconds 180
-```
-
-| Service | Local address |
-|---|---|
-| Helpdesk UI | http://localhost:8000 |
-| App metrics | http://localhost:8000/metrics |
-| Prometheus targets | http://localhost:9090/targets |
-| Prometheus alerts | http://localhost:9090/alerts |
-| Grafana | http://localhost:3000 |
-
-Log into Grafana as `admin`, using `GRAFANA_ADMIN_PASSWORD` from `.env`. Open **Dashboards → DevOps Lab → RT Helpdesk**. The Prometheus datasource and dashboard are provisioned from files. Allow at least two scrapes for rates to appear. An error-rate panel showing zero with healthy traffic is expected.
-
-Read [the monitoring lab](docs/MONITORING.md) for queries, alert exercises and Kubernetes requirements. Prometheus displays firing/resolved alerts. Email or chat notifications are not configured in this package.
-
-## Tests
-
-The following command uses a separate, disposable PostgreSQL test database. It does not test against the application's persistent database.
-
-```sh
-docker compose --profile test run --build --rm tests
-docker compose --profile test stop test-db
-docker compose --profile test rm -f test-db
-```
-
-For local Python development, install Python 3.12 and run:
-
-```sh
-python -m venv .venv
-# Linux/macOS: source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-```
-
-Without `RUN_DB_TESTS=1`, database integration tests explicitly skip. To run them against your own disposable PostgreSQL, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE` and `RUN_DB_TESTS=1`. `DB_NAME` must end in `_test`; these tests clear its tickets table. The test user must be able to create the `helpdesk` schema. Do not use a shared or live database.
-
-`.github/workflows/ci.yml` runs all tests with a PostgreSQL service on pull requests and `main`. It also builds the runtime image without pushing it. Enable the workflow after pushing the repository to GitHub, then require its check where your repository supports that feature. Otherwise record successful checks before merging. No independent PR approval is required for this individual project. Actions use version tags for readability; pin reviewed commit SHAs for a stronger supply-chain policy.
-
-## Backup and restore locally
-
-```sh
-python scripts/db_backup.py --output backups/lab.dump
-python scripts/db_restore.py backups/lab.dump --database helpdesk_restore_check1
-```
-
-The backup uses `pg_dump` custom format. Restore only accepts a **new** name beginning with `helpdesk_restore_`. It does not overwrite the live database and fails if the destination already exists. It prints a restored row count. Compare actual ticket values as well before declaring recovery successful.
-
-Remove the temporary restore database after inspection:
-
-```sh
-docker compose exec db dropdb -U postgres helpdesk_restore_check1
-```
-
-If a restore fails, the newly created test database is left in place for diagnosis. Drop that disposable database explicitly before retrying. Backup archives contain ticket data; keep them private.
-
-## API and deployment contract
-
-See [API.md](docs/API.md) for requests and configuration. All web responses use port **8000**. Required paths are `/healthz`, `/readyz`, `/version` and `/metrics`.
-
-Your runtime image must include Gunicorn, use UID/GID **10001**, write application logs to stdout and support a read-only root filesystem with writable `/tmp`. **Keep one Gunicorn worker per container** for correct metrics. Four threads serve requests; scale with Kubernetes replicas. Adding worker processes requires Prometheus multiprocess configuration that is not included here.
-
-Build an image with an identifiable version:
-
-```sh
-docker build --target runtime --build-arg APP_VERSION=demo-v1 -t rt-helpdesk:demo-v1 .
-```
-
-In Jenkins, replace `demo-v1` with the exact checked-out Git commit SHA. Bake the version into the image and deploy the published image digest to the single `helpdesk` environment. `APP_ENV` is runtime configuration; normally do not override baked-in `APP_VERSION` in Kubernetes.
-
-Before starting the app in a new Kubernetes environment, provision the database and `helpdesk` schema, then run the image once as a Job with:
-
-```sh
-flask --app app init-db
-```
-
-The initialization retries temporary connection failures up to ten times. `schema.sql` is the initial schema, not a general migration framework. App restarts do not execute DDL.
-
-## Versions and verification
-
-Python dependencies are pinned in `requirements.txt` and `requirements-dev.txt`. PostgreSQL uses the maintained `16-bookworm` tag; Python uses `3.12-slim-bookworm`. These tags can receive updates. Record resolved digests in your release evidence. Prometheus and Grafana use explicit versions in Compose. Review and scan versions before running a class.
-
-See [VALIDATION.md](docs/VALIDATION.md) for what was actually executed while preparing this package and what still requires a Docker/AWS environment.
-
-Verified end-to-end automated release pipeline.
