@@ -89,7 +89,25 @@ Verified that the **RT-Helpdesk** web application is live with the latest Git co
 ---
 
 ### Exercise 2: Jenkins Dedicated Build Agent Verification
-Configured a dedicated `helpdesk-build` agent node and executed a verification pipeline (`agent-verify-dedicated-script`) confirming non-root execution (`buildagent`) and Docker Engine availability.
+Configured a dedicated `helpdesk-build` agent node and created a verification Pipeline job (`agent-verify`) to confirm non-root execution (`buildagent`) and Docker Engine availability on the build node.
+
+#### Job Setup Instructions
+1. Open the Jenkins UI (`http://localhost:8080`) via SSH tunnel and click **+ New Item**.
+2. Enter the item name **`agent-verify`**, select **Pipeline**, and click **OK**.
+3. Under **Pipeline -> Definition**, choose **Pipeline script** and paste the following declarative script:
+   ```groovy
+   pipeline {
+     agent { label 'helpdesk-build' }
+     stages {
+       stage('Verify Build Agent') {
+         steps {
+           sh 'id -un && docker version'
+         }
+       }
+     }
+   }
+   ```
+4. Click **Save** and trigger **Build Now** to verify the console output.
 
 * **Jenkins Console Output (`id -un` & `docker version`):**
   ![Jenkins Agent Verification](docs/images/04-jenkins-agent-verify.png)
@@ -136,6 +154,3 @@ ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
 # Stop EC2 instances when idle to eliminate hourly compute charges
 aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
 ```
-
-
-
