@@ -140,41 +140,28 @@ helpdesk-project/
 ### Week 3: Server Hardening & Kubernetes Deployment (Kind)
 1. **Upload Project Files & Run Host Bootstrap Script on `<APP_IP>`:**
    ```bash
-   # Create the target project directory on the App server and assign ownership to ubuntu
-   ssh ubuntu@<APP_IP> "sudo mkdir -p /opt/rt-helpdesk && sudo chown -R ubuntu:ubuntu /opt/rt-helpdesk"
+   ssh ubuntu@<APP_IP> "sudo mkdir -p /opt/rt-helpdesk && sudo chown -R ubuntu:ubuntu /opt/rt-helpdesk" # Create project dir & assign ownership
+   scp -r app reference ubuntu@<APP_IP>:/opt/rt-helpdesk/                                              # Copy app & reference files to server
 
-   # Securely copy the application code and infrastructure reference files to the App server
-   scp -r app reference ubuntu@<APP_IP>:/opt/rt-helpdesk/
-
-   # Install Docker, Kind, kubectl, and AWS/PostgreSQL clients, then initialize the cluster
    ssh ubuntu@<APP_IP> "
-     # Update package index and install core runtime and CLI utilities
-     sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli
-     # Allow the ubuntu user to run Docker commands without sudo
-     sudo usermod -aG docker ubuntu
-     # Download and install Kind (Kubernetes in Docker) binary
-     curl -Lo ./kind https://k8s.io
-     chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-     # Download and install the Kubernetes CLI (kubectl)
-     curl -LO https://k8s.io
-     chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
-     # Spin up a local single-node Kubernetes cluster named 'helpdesk'
-     kind create cluster --name helpdesk
+     sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli         # Install Docker, CLI tools & DB client
+     sudo usermod -aG docker ubuntu                                                                    # Grant ubuntu user non-sudo Docker access
+     curl -Lo ./kind https://k8s.io                              # Download Kind binary for Linux AMD64
+     chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind                                             # Make Kind executable & move to PATH
+     curl -LO https://k8s.io                                # Download kubectl CLI binary
+     chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl                                        # Make kubectl executable & move to PATH
+     kind create cluster --name helpdesk                                                               # Spin up local 'helpdesk' K8s cluster
    "
    ```
 2. **Deploy Namespaces, RBAC, PostgreSQL & RT-Helpdesk Application:**
    ```bash
    ssh ubuntu@<APP_IP> "
-     cd /opt/rt-helpdesk
-     # Create isolated namespaces for the application and monitoring workloads
-     kubectl create namespace helpdesk
-     kubectl create namespace monitoring
-     # Apply least-privilege RBAC roles for automated Jenkins deployments
-     kubectl apply -f reference/k8s/jenkins-rbac.yaml
-     # Deploy the RT-Helpdesk FastAPI application and PostgreSQL StatefulSet
-     kubectl apply -f reference/k8s/app.yaml
-     # Verify that all application and database pods reach the Running state
-     kubectl -n helpdesk get pods
+     cd /opt/rt-helpdesk                                                                               # Navigate to project directory on server
+     kubectl create namespace helpdesk                                                                 # Create isolated namespace for app & DB
+     kubectl create namespace monitoring                                                               # Create isolated namespace for monitoring
+     kubectl apply -f reference/k8s/jenkins-rbac.yaml                                                  # Apply least-privilege RBAC for Jenkins
+     kubectl apply -f reference/k8s/app.yaml                                                           # Deploy FastAPI app & PostgreSQL DB
+     kubectl -n helpdesk get pods                                                                      # Verify all pods are in Running state
    "
    ```
 
@@ -184,25 +171,19 @@ helpdesk-project/
 1. **Install Jenkins & Configure Dedicated Build Agent (`buildagent`) on `<CI_IP>`:**
    ```bash
    ssh ubuntu@<CI_IP> "
-     # Install Java 17 runtime (required by Jenkins), Docker Engine, and Git
-     sudo apt-get update && sudo apt-get install -y fontconfig openjdk-17-jre docker.io git
-     # Import the official Jenkins GPG repository key and add the apt package source
-     sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://jenkins.io
-     echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://jenkins.io binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
-     # Install Jenkins and enable the systemd service to start automatically on boot
-     sudo apt-get update && sudo apt-get install -y jenkins
-     sudo systemctl enable --now jenkins
+     sudo apt-get update && sudo apt-get install -y fontconfig openjdk-17-jre docker.io git            # Install Java 17, Docker Engine & Git
+     sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://jenkins.io # Import Jenkins GPG key
+     echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://jenkins.io binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null # Add Jenkins apt repo
+     sudo apt-get update && sudo apt-get install -y jenkins                                            # Install Jenkins controller package
+     sudo systemctl enable --now jenkins                                                               # Enable & start Jenkins service
 
-     # Create a dedicated non-root user for running CI build jobs and grant Docker access
-     sudo useradd -m -s /bin/bash buildagent
-     sudo usermod -aG docker buildagent
-     # Generate an ED25519 SSH keypair for the Jenkins controller
-     sudo -u jenkins ssh-keygen -t ed25519 -f /var/lib/jenkins/.ssh/id_ed25519 -N ''
-     # Authorize the Jenkins controller to connect to the buildagent user via SSH
-     sudo mkdir -p /home/buildagent/.ssh
-     sudo cp /var/lib/jenkins/.ssh/id_ed25519.pub /home/buildagent/.ssh/authorized_keys
-     sudo chown -R buildagent:buildagent /home/buildagent/.ssh
-     sudo chmod 700 /home/buildagent/.ssh && sudo chmod 600 /home/buildagent/.ssh/authorized_keys
+     sudo useradd -m -s /bin/bash buildagent                                                           # Create dedicated non-root CI agent user
+     sudo usermod -aG docker buildagent                                                                # Grant buildagent access to Docker daemon
+     sudo -u jenkins ssh-keygen -t ed25519 -f /var/lib/jenkins/.ssh/id_ed25519 -N ''                   # Generate SSH keypair for Jenkins master
+     sudo mkdir -p /home/buildagent/.ssh                                                               # Create SSH config dir for buildagent
+     sudo cp /var/lib/jenkins/.ssh/id_ed25519.pub /home/buildagent/.ssh/authorized_keys                # Authorize Jenkins master key on agent
+     sudo chown -R buildagent:buildagent /home/buildagent/.ssh                                         # Set proper ownership on .ssh folder
+     sudo chmod 700 /home/buildagent/.ssh && sudo chmod 600 /home/buildagent/.ssh/authorized_keys      # Enforce strict SSH file permissions
    "
    ```
 
