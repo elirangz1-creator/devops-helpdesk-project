@@ -357,12 +357,13 @@ Because no application, database, CI, or monitoring ports are exposed to the pub
 If you stopped and restarted your EC2 instances, fetch their updated public IP addresses first:
 ```bash
 AWS_PAGER="" aws ec2 describe-instances --region us-east-1 \
-  --instance-ids i-0fb0aeb74aca2274a i-0b7f8549ffd346b5c \
-  --query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value|,PublicIpAddress,PrivateIpAddress,State.Name]" \
+  --filters "Name=tag:Name,Values=*helpdesk*" \
+  --query "Reservations[].Instances[].[Tags[?Key=='Name'].Value|[0],InstanceId,PublicIpAddress,PrivateIpAddress,State.Name]" \
   --output table
 ```
 * **`<APP_IP>`:** Public IP of the Kubernetes Application server (`10.42.1.9`).
 * **`<CI_IP>`:** Public IP of the Jenkins CI server (`10.42.1.179`).
+
 
 ---
 
