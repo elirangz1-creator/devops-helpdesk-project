@@ -189,19 +189,40 @@ helpdesk-project/
 
 2. **Authorize Jenkins SSH Access to App Server & Configure Pipeline:**
    ```bash
-   JENKINS_PUB=$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub")
-   ssh ubuntu@<APP_IP> "echo '$JENKINS_PUB' >> ~/.ssh/authorized_keys"
+   JENKINS_PUB=\$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub") # Retrieve Jenkins public SSH key
+   ssh ubuntu@<APP_IP> "echo '\$JENKINS_PUB' >> ~/.ssh/authorized_keys"               # Authorize key on App server for deployments
    ```
-   * Open Jenkins (`ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N`), add the `helpdesk-build` agent node, store GHCR credentials, and run `helpdesk-release` on push to `main`.
+
+   #### Step-by-Step Jenkins UI Setup (`http://localhost:8080`)
+   1. **Unlock Jenkins:**
+      * Open an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N`) and browse to `http://localhost:8080`.
+      * Retrieve the initial password via `ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"`, install suggested plugins, and create your admin user.
+   2. **Add SSH Credential for Build Agent (`buildagent-ssh`):**
+      * Go to **Manage Jenkins -> Credentials -> System -> Global credentials -> + Add Credentials**.
+      * Select **SSH Username with private key**, set **ID** to `buildagent-ssh`, **Username** to `buildagent`, and paste the private key from `/var/lib/jenkins/.ssh/id_ed25519`.
+   3. **Add GHCR & Kubeconfig Credentials:**
+      * **GHCR Token:** Add a **Username with password** credential (ID: `ghcr-creds`) using your GitHub username and a Personal Access Token (PAT) with `write:packages` scope.
+      * **Restricted Kubeconfig:** Extract the restricted kubeconfig for the Jenkins RBAC service account from `<APP_IP>` and upload it as a **Secret file** credential (ID: `helpdesk-kubeconfig`).
+   4. **Register Dedicated Build Agent (`helpdesk-build`):**
+      * Go to **Manage Jenkins -> Nodes -> + New Node**.
+      * Enter name **`helpdesk-build`**, select **Permanent Agent**, and click **Create**.
+      * Set **Remote root directory** to `/home/buildagent`, **Labels** to `helpdesk-build`, **Launch method** to **Launch agents via SSH**, **Host** to `127.0.0.1`, select `buildagent-ssh` credentials, and click **Save**.
+   5. **Create & Run Release Pipeline (`helpdesk-release`):**
+      * Click **+ New Item**, enter **`helpdesk-release`**, select **Pipeline**, and click **OK**.
+      * Under **Pipeline -> Definition**, choose **Pipeline script from SCM**, select **Git**, enter your repository URL, set **Branch Specifier** to `*/main`, **Script Path** to `Jenkinsfile`, and click **Save**.
+      * Click **Build Now** to execute the full automated build, test, digest push, and Kubernetes rollout.
+
 3. **Rollback Procedure (In Case of Failed Deployment):**
    ```bash
    ssh ubuntu@<APP_IP> "
-     kubectl -n helpdesk rollout undo deployment/api && \
-     kubectl -n helpdesk rollout status deployment/api
+     kubectl -n helpdesk rollout undo deployment/api && \   # Revert the 'api' Deployment to the previous stable revision
+     kubectl -n helpdesk rollout status deployment/api      # Wait and verify that the rolled-back Pods are healthy and ready
    "
    ```
+   * **What these commands do:**
+     * **`kubectl -n helpdesk rollout undo deployment/api`:** Immediately rolls back the `api` Deployment in the `helpdesk` namespace to its last known working image digest and configuration.
+     * **`kubectl -n helpdesk rollout status deployment/api`:** Monitors the rollback progress in real time until all replacement Pods pass their Readiness probes and serve traffic normally.
 
----
 
 ### Week 5: Monitoring, Alertmanager & S3 Backup/Restore
 1. **Deploy Prometheus, Grafana & Alertmanager (Gmail SMTP):**
@@ -225,21 +246,23 @@ helpdesk-project/
 3. **Run Automated S3 Backup & Isolated Database Restore Verification:**
    ```bash
    # Backup to S3
-   ssh ubuntu@<APP_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026"
-   aws s3 ls s3://helpdesk-backups-egetz-2026/backups/helpdesk/
+   ssh ubuntu@<APP_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026" # Run pg_dump inside db-0 & upload dump to S3
+   aws s3 ls s3://helpdesk-backups-egetz-2026/backups/helpdesk/                                                        # List S3 bucket to confirm backup upload
 
    # Isolated Restore Check
    ssh ubuntu@<APP_IP> "
-     aws s3 cp s3://helpdesk-backups-egetz-2026/backups/helpdesk/<LATEST_DUMP>.dump /tmp/restore.dump && \
-     kubectl -n helpdesk cp /tmp/restore.dump db-0:/tmp/restore.dump && \
-     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'CREATE DATABASE helpdesk_restore_check1;' && \
-     kubectl -n helpdesk exec db-0 -- pg_restore -U postgres -d helpdesk_restore_check1 /tmp/restore.dump && \
-     kubectl -n helpdesk exec db-0 -- psql -U postgres -d helpdesk_restore_check1 -c '\dt' && \
-     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'DROP DATABASE helpdesk_restore_check1;'
+     aws s3 cp s3://helpdesk-backups-egetz-2026/backups/helpdesk/<LATEST_DUMP>.dump /tmp/restore.dump && \            # Download latest dump file from S3 to host
+     kubectl -n helpdesk cp /tmp/restore.dump db-0:/tmp/restore.dump && \                                             # Copy dump file into the PostgreSQL Pod
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'CREATE DATABASE helpdesk_restore_check1;' && \             # Create a clean isolated database for testing
+     kubectl -n helpdesk exec db-0 -- pg_restore -U postgres -d helpdesk_restore_check1 /tmp/restore.dump && \        # Restore schema and data into temp database
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -d helpdesk_restore_check1 -c '\dt' && \                        # List tables to verify successful restoration
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'DROP DATABASE helpdesk_restore_check1;'                    # Drop temporary database after verification
    "
    ```
+   * **What these commands do:**
+     * **Backup & Verification (`k8s-backup.sh` & `aws s3 ls`):** Executes a compressed `pg_dump` against the live PostgreSQL instance, uploads it to your private S3 bucket, and verifies the artifact's presence in cloud storage.
+     * **Isolated Restore Check (`pg_restore`):** Downloads the backup from S3 and restores it into a separate temporary database (`helpdesk_restore_check1`) inside `db-0`, confirming data integrity without risking or overwriting live production tables.
 
----
 
 ### Week 6: Cost Control, Operations & Final Teardown
 * **Open Local SSH Tunnels to Web Interfaces:**
