@@ -33,3 +33,11 @@ scrape_configs:
   - source_labels:
     - __meta_kubernetes_pod_name
     target_label: pod
+
+# Configure Prometheus to forward firing alerts to the internal Alertmanager service
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # Kubernetes internal DNS address for the Alertmanager Service
+            - alertmanager.monitoring.svc.cluster.local:9093

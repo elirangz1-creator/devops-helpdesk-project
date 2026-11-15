@@ -1,0 +1,104 @@
+# ==============================================================================
+# 1. ConfigMap: Defines routing rules and Gmail SMTP receiver configuration
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      # Time to wait before declaring an alert resolved if no new data arrives
+      resolve_timeout: 5m
+      # Gmail SMTP server settings
+      smtp_smarthost: '://gmail.com'
+      smtp_from: 'elirangz1@gmail.com'
+      smtp_auth_username: 'YOUR_EMAIL@gmail.com'
+      # Read the App Password securely from a mounted Kubernetes Secret file
+      smtp_auth_password_file: '/etc/alertmanager/secrets/smtp_password'
+      smtp_require_tls: true
+
+    route:
+      # Group incoming alerts by alert name to prevent email spam
+      group_by: ['alertname']
+      # Wait 10s to batch multiple alerts that fire simultaneously
+      group_wait: 10s
+      # Wait 1m before sending updates on already active alert groups
+      group_interval: 1m
+      # Re-send active alert notifications every 1 hour if still unresolved
+      repeat_interval: 1h
+      # Default receiver target for all matched alerts
+      receiver: 'email-alerts'
+
+    receivers:
+      - name: 'email-alerts'
+        email_configs:
+          # Target email address to receive alerts
+          - to: 'YOUR_EMAIL@gmail.com'
+            # Send a follow-up email when the alert recovers
+            send_resolved: true
+
+---
+# ==============================================================================
+# 2. Deployment: Runs the Alertmanager container inside the monitoring namespace
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          # Official pinned Alertmanager image for reproducibility
+          image: prom/alertmanager:v0.27.0
+          args:
+            # Load configuration from the mounted ConfigMap volume
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+            # Local directory for storing alert silences and notification logs
+            - "--storage.path=/alertmanager"
+          ports:
+            # Default HTTP API and Web UI port for Alertmanager
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            - name: smtp-secret
+              mountPath: /etc/alertmanager/secrets
+              readOnly: true
+      volumes:
+        # Mount the ConfigMap defined above as a file inside the container
+        - name: config
+          configMap:
+            name: alertmanager-config
+        # Mount the Kubernetes Secret containing the SMTP App Password
+        - name: smtp-secret
+          secret:
+            secretName: alertmanager-smtp
+
+---
+# ==============================================================================
+# 3. Service: Exposes Alertmanager internally within the Kubernetes cluster
+# ==============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    # Internal ClusterIP port used by Prometheus to push firing alerts
+    - port: 9093
+      targetPort: 9093
