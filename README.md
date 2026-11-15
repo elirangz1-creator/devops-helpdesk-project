@@ -44,9 +44,37 @@ helpdesk-project/
 
 ---
 
-## 4. Operational Exercises & Verification Evidence
+## 4. Alertmanager & Gmail SMTP Configuration
 
-> **Note:** Save your 8 verification screenshots inside `docs/images/` using the filenames listed below to render them automatically on GitHub.
+To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`://gmail.com`) using TLS encryption and a dedicated **Google App Password**.
+
+### 1. Security & Secrets Management
+* **Google App Password:** Generated a dedicated 16-character App Password under Google Account Security (with 2-Step Verification enabled), avoiding the use of primary account credentials.
+* **Kubernetes Secret (`alertmanager-smtp`):** Stored the App Password securely inside the `monitoring` namespace rather than hardcoding it in Git:
+  ```bash
+  kubectl -n monitoring create secret generic alertmanager-smtp \
+    --from-literal=smtp_password='<GOOGLE_APP_PASSWORD>'
+  ```
+* **Read-Only Volume Mount:** Mounted the secret into the Alertmanager pod at `/etc/alertmanager/secrets/smtp_password` (`readOnly: true`) and referenced it via `smtp_auth_password_file`.
+
+### 2. Alert Routing & Custom HTML Template (`reference/k8s/alertmanager.yaml`)
+* **SMTP Relay:** Configured `smtp_smarthost: '://gmail.com'` with `smtp_require_tls: true`.
+* **Grouping & Deduplication:** Alerts are grouped by `alertname` (`group_wait: 10s`, `repeat_interval: 1h`) to prevent inbox flooding during outages.
+* **Dynamic HTML Notifications:** Configured `send_resolved: true` with a custom HTML template that renders a **Red (`[FIRING]`)** banner when an incident starts and a **Green (`[RESOLVED]`)** banner upon automatic recovery.
+
+### 3. Prometheus Integration (`reference/k8s/prometheus.yml`)
+Connected Prometheus to the internal Alertmanager Kubernetes `Service` endpoint:
+```yaml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager.monitoring.svc.cluster.local:9093
+```
+
+---
+
+## 5. Operational Exercises & Verification Evidence
 
 ### Exercise 1: End-to-End Application & Observability Health
 Verified that the **RT-Helpdesk** web application is live with the latest Git commit SHA badge, Prometheus actively scrapes the `/metrics` endpoint (`UP`), and Grafana visualizes real-time request rates and target health.
@@ -93,7 +121,7 @@ Integrated **Prometheus Alertmanager** with Gmail SMTP (`://gmail.com`) using a 
 
 ---
 
-## 5. Quick Operations & Cost-Control Commands
+## 6. Quick Operations & Cost-Control Commands
 
 ```bash
 # Start EC2 instances and retrieve current public IPs
@@ -108,5 +136,6 @@ ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
 # Stop EC2 instances when idle to eliminate hourly compute charges
 aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
 ```
+
 
 
