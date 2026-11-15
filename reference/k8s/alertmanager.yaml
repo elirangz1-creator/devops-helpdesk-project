@@ -1,5 +1,5 @@
 # ==============================================================================
-# 1. ConfigMap: Defines routing rules and Gmail SMTP receiver configuration
+# 1. ConfigMap: Defines alert routing rules and custom HTML Gmail SMTP receiver
 # ==============================================================================
 apiVersion: v1
 kind: ConfigMap
@@ -9,24 +9,27 @@ metadata:
 data:
   alertmanager.yml: |
     global:
-      # Time to wait before declaring an alert resolved if no new data arrives
+      # Duration to wait before marking an alert as resolved if no new data arrives
       resolve_timeout: 5m
-      # Gmail SMTP server settings
+      # Gmail SMTP server endpoint and port (TLS)
       smtp_smarthost: '://gmail.com'
+      # Sender email address displayed in the alert notification
       smtp_from: 'elirangz1@gmail.com'
-      smtp_auth_username: 'YOUR_EMAIL@gmail.com'
-      # Read the App Password securely from a mounted Kubernetes Secret file
+      # Gmail account username for SMTP authentication
+      smtp_auth_username: 'elirangz1@gmail.com'
+      # Path to the mounted Kubernetes Secret file containing the Google App Password
       smtp_auth_password_file: '/etc/alertmanager/secrets/smtp_password'
+      # Enforce encrypted TLS connection to the SMTP server
       smtp_require_tls: true
 
     route:
-      # Group incoming alerts by alert name to prevent email spam
+      # Group incoming alerts by alert name to avoid flooding the inbox
       group_by: ['alertname']
-      # Wait 10s to batch multiple alerts that fire simultaneously
+      # Wait 10 seconds to batch multiple alerts that fire simultaneously
       group_wait: 10s
-      # Wait 1m before sending updates on already active alert groups
+      # Wait 1 minute before sending updates for an already active alert group
       group_interval: 1m
-      # Re-send active alert notifications every 1 hour if still unresolved
+      # Re-send active alert notifications every 1 hour if the issue persists
       repeat_interval: 1h
       # Default receiver target for all matched alerts
       receiver: 'email-alerts'
@@ -34,10 +37,33 @@ data:
     receivers:
       - name: 'email-alerts'
         email_configs:
-          # Target email address to receive alerts
-          - to: 'YOUR_EMAIL@gmail.com'
-            # Send a follow-up email when the alert recovers
+          # Destination email address for receiving system alerts
+          - to: 'elirangz1@gmail.com'
+            # Automatically send a follow-up email when the issue is resolved
             send_resolved: true
+            # Clean, human-readable email subject line with status and alert name
+            headers:
+              Subject: '[{{ .Status | toUpper }}] RT-Helpdesk Alert: {{ .CommonLabels.alertname }}'
+            # Clean HTML email body template with dynamic color coding (Red = Firing, Green = Resolved)
+            html: |
+              <div style="font-family: Arial, sans-serif; max-width: 600px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                <!-- Header banner changes color based on alert status -->
+                <div style="background-color: {{ if eq .Status "firing" }}#d9534f{{ else }}#5cb85c{{ end }}; color: white; padding: 15px;">
+                  <h2 style="margin: 0;">{{ if eq .Status "firing" }}🚨 SYSTEM ALERT (FIRING){{ else }}✅ ISSUE RESOLVED{{ end }}</h2>
+                </div>
+                <!-- Main body displaying alert metadata, summary, and description -->
+                <div style="padding: 20px; background-color: #f9f9f9;">
+                  <p><strong>Alert Name:</strong> {{ .CommonLabels.alertname }}</p>
+                  <p><strong>Severity:</strong> {{ .CommonLabels.severity | toUpper }}</p>
+                  <p><strong>Namespace:</strong> {{ .CommonLabels.namespace }}</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+                  {{ range .Alerts }}
+                    <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+                    <p><strong>Details:</strong> {{ .Annotations.description }}</p>
+                    <p style="font-size: 12px; color: #777;">Started at: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</p>
+                  {{ end }}
+                </div>
+              </div>
 
 ---
 # ==============================================================================
@@ -60,28 +86,30 @@ spec:
     spec:
       containers:
         - name: alertmanager
-          # Official pinned Alertmanager image for reproducibility
+          # Official pinned Alertmanager image version for deterministic deployments
           image: prom/alertmanager:v0.27.0
           args:
             # Load configuration from the mounted ConfigMap volume
             - "--config.file=/etc/alertmanager/alertmanager.yml"
-            # Local directory for storing alert silences and notification logs
+            # Local directory inside the container for storing silences and notification logs
             - "--storage.path=/alertmanager"
           ports:
             # Default HTTP API and Web UI port for Alertmanager
             - containerPort: 9093
           volumeMounts:
+            # Mount the configuration directory
             - name: config
               mountPath: /etc/alertmanager
+            # Mount the Kubernetes Secret directory as read-only for security
             - name: smtp-secret
               mountPath: /etc/alertmanager/secrets
               readOnly: true
       volumes:
-        # Mount the ConfigMap defined above as a file inside the container
+        # Reference the ConfigMap defined above
         - name: config
           configMap:
             name: alertmanager-config
-        # Mount the Kubernetes Secret containing the SMTP App Password
+        # Reference the Kubernetes Secret storing the Gmail App Password
         - name: smtp-secret
           secret:
             secretName: alertmanager-smtp
