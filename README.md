@@ -146,9 +146,9 @@ helpdesk-project/
    ssh ubuntu@<APP_IP> "
      sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli         # Install Docker, CLI tools & DB client
      sudo usermod -aG docker ubuntu                                                                    # Grant ubuntu user non-sudo Docker access
-     curl -Lo ./kind https://k8s.io                              # Download Kind binary for Linux AMD64
+     curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64                                                                    # Download Kind binary for Linux AMD64
      chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind                                             # Make Kind executable & move to PATH
-     curl -LO https://k8s.io                                # Download kubectl CLI binary
+     curl -LO https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl                                                                           # Download kubectl CLI binary
      chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl                                        # Make kubectl executable & move to PATH
      kind create cluster --name helpdesk                                                               # Spin up local 'helpdesk' K8s cluster
    "
@@ -172,8 +172,8 @@ helpdesk-project/
    ```bash
    ssh ubuntu@<CI_IP> "
      sudo apt-get update && sudo apt-get install -y fontconfig openjdk-17-jre docker.io git            # Install Java 17, Docker Engine & Git
-     sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://jenkins.io # Import Jenkins GPG key
-     echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://jenkins.io binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null # Add Jenkins apt repo
+     sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key                           # Import Jenkins GPG key
+     echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null # Add Jenkins apt repo
      sudo apt-get update && sudo apt-get install -y jenkins                                            # Install Jenkins controller package
      sudo systemctl enable --now jenkins                                                               # Enable & start Jenkins service
 
