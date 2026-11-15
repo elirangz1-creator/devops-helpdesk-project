@@ -93,30 +93,41 @@ helpdesk-project/
    ```
 2. **Configure & Apply Lab Infrastructure (`VPC`, `EC2`, `S3`, `IAM`, `AWS Budgets`):**
    ```bash
+   # Navigate to the main lab Terraform directory
    cd ../lab
-   MY_IP=$(curl -s ifconfig.me)
 
+   # Fetch your current public IP address to restrict SSH access exclusively to you
+   MY_IP=\$(curl -s ifconfig.me)
+
+   # Create backend.hcl to configure remote state storage and native S3 locking
    cat << HCL > backend.hcl
-   bucket       = "<YOUR_TFSTATE_BUCKET_NAME>"
-   key          = "lab/terraform.tfstate"
-   region       = "us-east-1"
-   encrypt      = true
-   use_lockfile = true
+   bucket       = "<YOUR_TFSTATE_BUCKET_NAME>" # S3 bucket created in the bootstrap step
+   key          = "lab/terraform.tfstate"      # Path to the state file inside the bucket
+   region       = "us-east-1"                  # AWS region for the state bucket
+   encrypt      = true                         # Enable server-side encryption at rest
+   use_lockfile = true                         # Enable native S3 state locking to prevent concurrent edits
    HCL
 
+   # Create terraform.tfvars to supply environment-specific variables
    cat << VARS > terraform.tfvars
-   aws_region         = "us-east-1"
-   admin_cidr         = "${MY_IP}/32"
-   ssh_public_key     = "$(cat ~/.ssh/id_ed25519.pub)"
-   ci_instance_type   = "t3.micro"
-   app_instance_type  = "t3.small"
-   backup_bucket_name = "helpdesk-backups-egetz-2026"
+   aws_region         = "us-east-1"                        # Target AWS deployment region
+   admin_cidr         = "\${MY_IP}/32"                      # Lock SSH (port 22) strictly to your IP
+   ssh_public_key     = "\$(cat ~/.ssh/id_ed25519.pub)"     # Public SSH key injected into EC2 instances
+   ci_instance_type   = "t3.micro"                         # Cost-optimized instance for Jenkins CI
+   app_instance_type  = "t3.small"                         # Cost-optimized instance for Kubernetes App
+   backup_bucket_name = "helpdesk-backups-egetz-2026"      # Private S3 bucket name for database backups
    VARS
 
+   # Initialize Terraform and connect to the remote S3 backend
    terraform init -backend-config=backend.hcl
+
+   # Preview the infrastructure changes and save the execution plan
    terraform plan -out=lab.plan
+
+   # Provision all AWS resources defined in the saved plan
    terraform apply lab.plan
    ```
+
 3. **Retrieve EC2 Instance Public & Private IPs:**
    ```bash
    aws ec2 describe-instances --region us-east-1 \
