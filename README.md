@@ -146,9 +146,9 @@ helpdesk-project/
    ssh ubuntu@<APP_IP> "
      sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli         # Install Docker, CLI tools & DB client
      sudo usermod -aG docker ubuntu                                                                    # Grant ubuntu user non-sudo Docker access
-     curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64                                                                    # Download Kind binary for Linux AMD64
+     curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64                              # Download Kind binary for Linux AMD64
      chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind                                             # Make Kind executable & move to PATH
-     curl -LO https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl                                                                           # Download kubectl CLI binary
+     curl -LO https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl                                # Download kubectl CLI binary
      chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl                                        # Make kubectl executable & move to PATH
      kind create cluster --name helpdesk                                                               # Spin up local 'helpdesk' K8s cluster
    "
