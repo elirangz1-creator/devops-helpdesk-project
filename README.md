@@ -97,7 +97,7 @@ helpdesk-project/
    cd ../lab
 
    # Fetch your current public IP address to restrict SSH access exclusively to you
-   MY_IP=\$(curl -s ifconfig.me)
+   MY_IP=$(curl -s ifconfig.me)
 
    # Create backend.hcl to configure remote state storage and native S3 locking
    cat << HCL > backend.hcl
@@ -111,8 +111,8 @@ helpdesk-project/
    # Create terraform.tfvars to supply environment-specific variables
    cat << VARS > terraform.tfvars
    aws_region         = "us-east-1"                        # Target AWS deployment region
-   admin_cidr         = "\${MY_IP}/32"                      # Lock SSH (port 22) strictly to your IP
-   ssh_public_key     = "\$(cat ~/.ssh/id_ed25519.pub)"     # Public SSH key injected into EC2 instances
+   admin_cidr         = "${MY_IP}/32"                      # Lock SSH (port 22) strictly to your IP
+   ssh_public_key     = "$(cat ~/.ssh/id_ed25519.pub)"     # Public SSH key injected into EC2 instances
    ci_instance_type   = "t3.micro"                         # Cost-optimized instance for Jenkins CI
    app_instance_type  = "t3.small"                         # Cost-optimized instance for Kubernetes App
    backup_bucket_name = "helpdesk-backups-egetz-2026"      # Private S3 bucket name for database backups
@@ -189,8 +189,8 @@ helpdesk-project/
 
 2. **Authorize Jenkins SSH Access to App Server & Configure Pipeline:**
    ```bash
-   JENKINS_PUB=\$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub") # Retrieve Jenkins public SSH key
-   ssh ubuntu@<APP_IP> "echo '\$JENKINS_PUB' >> ~/.ssh/authorized_keys"               # Authorize key on App server for deployments
+   JENKINS_PUB=$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub") # Retrieve Jenkins public SSH key
+   ssh ubuntu@<APP_IP> "echo '$JENKINS_PUB' >> ~/.ssh/authorized_keys"               # Authorize key on App server for deployments
    ```
 
    #### Step-by-Step Jenkins UI Setup (`http://localhost:8080`)
@@ -297,7 +297,7 @@ helpdesk-project/
 
 ## 5. Alertmanager & Gmail SMTP Configuration
 
-To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`://gmail.com`) using TLS encryption and a dedicated **Google App Password**.
+To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`smtp.gmail.com:587`) using TLS encryption and a dedicated **Google App Password**.
 
 * **Kubernetes Secret (`alertmanager-smtp`):** Stores the App Password securely inside the `monitoring` namespace and mounts it read-only at `/etc/alertmanager/secrets/smtp_password`.
 * **Dynamic HTML Notifications (`reference/k8s/alertmanager.yaml`):** Configured `send_resolved: true` with a custom HTML template rendering a **Red (`[FIRING]`)** banner on outage and a **Green (`[RESOLVED]`)** banner upon recovery.
