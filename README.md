@@ -347,3 +347,48 @@ Scaled PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset d
 * **Resolved Recovery Email Notification:**
   ![Alertmanager Resolved Email](docs/images/08-email-alert-resolved.png)
 
+---
+
+## 7. Quick Access & SSH Tunneling Guide
+
+Because no application, database, CI, or monitoring ports are exposed to the public internet, all web interfaces are accessed securely via **SSH Local Port Forwarding**.
+
+### 1. Retrieve Current EC2 Public IPs
+If you stopped and restarted your EC2 instances, fetch their updated public IP addresses first:
+```bash
+AWS_PAGER="" aws ec2 describe-instances --region us-east-1 \
+  --instance-ids i-0fb0aeb74aca2274a i-0b7f8549ffd346b5c \
+  --query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value|,PublicIpAddress,PrivateIpAddress,State.Name]" \
+  --output table
+```
+* **`<APP_IP>`:** Public IP of the Kubernetes Application server (`10.42.1.9`).
+* **`<CI_IP>`:** Public IP of the Jenkins CI server (`10.42.1.179`).
+
+---
+
+### 2. Individual Service Tunnels (Separate Terminals)
+
+| Service | Local URL | SSH Tunnel Command |
+| :--- | :--- | :--- |
+| **RT-Helpdesk App** | `http://localhost:8000` | `ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 ubuntu@<APP_IP> "kubectl -n helpdesk port-forward service/api 8000:8000"` |
+| **Prometheus UI** | `http://localhost:9090` | `ssh -o StrictHostKeyChecking=no -L 9090:127.0.0.1:9090 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/prometheus 9090:9090"` |
+| **Grafana Dashboard** | `http://localhost:3000` | `ssh -o StrictHostKeyChecking=no -L 3000:127.0.0.1:3000 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/grafana 3000:3000"` |
+| **Jenkins Controller** | `http://localhost:8080` | `ssh -o StrictHostKeyChecking=no -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N` |
+
+---
+
+### 3. Combined All-in-One App Server Tunnel (Single Terminal)
+To open **RT-Helpdesk (8000)**, **Prometheus (9090)**, and **Grafana (3000)** simultaneously in one terminal window:
+```bash
+ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@<APP_IP> \
+  "kubectl -n helpdesk port-forward service/api 8000:8000 & kubectl -n monitoring port-forward service/prometheus 9090:9090 & kubectl -n monitoring port-forward service/grafana 3000:3000 & wait"
+```
+
+---
+
+### 4. Close All Active SSH Tunnels
+* **Single terminal:** Press **`Ctrl` + `C`**.
+* **Terminate all background tunnels at once:**
+  ```bash
+  pkill -f "ssh .*127.0.0.1:"
+  ```
