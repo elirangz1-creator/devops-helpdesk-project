@@ -44,9 +44,140 @@ helpdesk-project/
 
 ---
 
-## 4. Alertmanager & Gmail SMTP Configuration
+## 4. Step-by-Step Project Build Guide (Phases 1–6)
 
-To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`://gmail.com`) using TLS encryption and a dedicated **Google App Password**.
+### Phase 1: Cloud Infrastructure Provisioning (Terraform & AWS)
+1. **Bootstrap Remote Terraform State (S3 + Native Locking):**
+   ```bash
+   cd reference/terraform/bootstrap
+   terraform init
+   terraform apply -auto-approve
+   ```
+2. **Deploy Lab Infrastructure (VPC, EC2, Security Groups, IAM, Budgets):**
+   Configure `terraform.tfvars` with your Admin IP (`/32`), SSH public key, and cost-optimized instance types (`t3.micro` / `t3.small`), then apply:
+   ```bash
+   cd ../lab
+   terraform init -backend-config=backend.hcl
+   terraform plan -out=lab.plan
+   terraform apply lab.plan
+   ```
+3. **Retrieve EC2 Instance Public & Private IPs:**
+   ```bash
+   aws ec2 describe-instances --region us-east-1 \
+     --query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value|[0],PublicIpAddress,PrivateIpAddress,State.Name]" \
+     --output table
+   ```
+
+---
+
+### Phase 2: Kubernetes Cluster & Observability Deployment (Kind)
+1. **Verify Cluster Pods Across Namespaces (`helpdesk` & `monitoring`):**
+   ```bash
+   ssh ubuntu@<APP_IP> "kubectl get pods -A"
+   ```
+2. **Verify Host Memory & Disk Capacity:**
+   ```bash
+   ssh ubuntu@<APP_IP> "free -h && df -h /"
+   ```
+3. **Open Secure SSH Tunnels to Application, Prometheus, and Grafana:**
+   ```bash
+   # Application UI (Port 8000)
+   ssh -L 8000:127.0.0.1:8000 ubuntu@<APP_IP> "kubectl -n helpdesk port-forward service/api 8000:8000"
+
+   # Prometheus UI (Port 9090)
+   ssh -L 9090:127.0.0.1:9090 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/prometheus 9090:9090"
+
+   # Grafana UI (Port 3000)
+   ssh -L 3000:127.0.0.1:3000 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/grafana 3000:3000"
+   ```
+4. **Generate Synthetic Traffic to Populate Metrics & Dashboards:**
+   ```bash
+   python3 reference/scripts/traffic.py --seconds 180
+   ```
+
+---
+
+### Phase 3: CI/CD Pipeline & Build Agent Setup (Jenkins & GHCR)
+1. **Open SSH Tunnel to Jenkins Controller (Port 8080):**
+   ```bash
+   ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
+   ```
+2. **Configure Dedicated Build Agent & Kubernetes RBAC:**
+   * Generate ED25519 SSH keypairs for Jenkins-to-Agent (`helpdesk-build`) and Agent-to-App deployment access.
+   * Grant least-privilege deployment permissions in the `helpdesk` namespace:
+     ```bash
+     ssh ubuntu@<APP_IP> "kubectl apply -f /opt/rt-helpdesk/reference/k8s/jenkins-rbac.yaml"
+     ```
+3. **Trigger Automated Build, Image Digest Push & K8s Rollout:**
+   ```bash
+   git add .
+   git commit -m "ci: trigger automated build and digest deployment"
+   git push origin main
+   ```
+
+---
+
+### Phase 4: Automated S3 Backups & Verified Database Restore
+1. **Run PostgreSQL Backup Script (`pg_dump` -> AWS S3):**
+   ```bash
+   ssh ubuntu@<APP_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026"
+   ```
+2. **Verify Backup Artifact in S3:**
+   ```bash
+   aws s3 ls s3://helpdesk-backups-egetz-2026/backups/helpdesk/
+   ```
+3. **Perform Isolated Database Restore Verification:**
+   ```bash
+   ssh ubuntu@<APP_IP> "
+     aws s3 cp s3://helpdesk-backups-egetz-2026/backups/helpdesk/<LATEST_DUMP>.dump /tmp/restore.dump && \
+     kubectl -n helpdesk cp /tmp/restore.dump db-0:/tmp/restore.dump && \
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'CREATE DATABASE helpdesk_restore_check1;' && \
+     kubectl -n helpdesk exec db-0 -- pg_restore -U postgres -d helpdesk_restore_check1 /tmp/restore.dump && \
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -d helpdesk_restore_check1 -c '\dt' && \
+     kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'DROP DATABASE helpdesk_restore_check1;'
+   "
+   ```
+
+---
+
+### Phase 5: Chaos Engineering & Real-Time Email Alerting
+1. **Simulate Database Outage (`scale=0`):**
+   ```bash
+   ssh ubuntu@<APP_IP> "kubectl -n helpdesk scale statefulset db --replicas=0"
+   ```
+2. **Verify API Graceful Degradation (`503 Service Unavailable`):**
+   ```bash
+   ssh ubuntu@<APP_IP> "kubectl -n helpdesk exec deploy/api -- python3 -c 'import urllib.request as u, urllib.error as e; p=8000;
+   try: u.urlopen(f\"http://127.0.0.1:{p}/api/tickets\", timeout=5)
+   except e.HTTPError as err: print(err.code, err.reason, err.read().decode())'"
+   ```
+3. **Verify Firing Alert & Email Notification (`[FIRING]`):**
+   * Confirm `HelpdeskDatabaseUnavailable` transitions to **`FIRING`** in Prometheus (`http://localhost:9090/alerts`).
+   * Confirm receipt of the red **`[FIRING]`** HTML alert email via Alertmanager.
+4. **Restore Database & Verify Auto-Recovery (`[RESOLVED]`):**
+   ```bash
+   ssh ubuntu@<APP_IP> "kubectl -n helpdesk scale statefulset db --replicas=1 && kubectl -n helpdesk rollout status statefulset/db"
+   ```
+
+---
+
+### Phase 6: Cost Control & Final Teardown
+* **Option A — Pause Lab Between Sessions (Stop EC2 Instances):**
+  ```bash
+  aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
+  ```
+* **Option B — Full Environment Destruction After Grading (`Teardown`):**
+  ```bash
+  aws s3 rm s3://helpdesk-backups-egetz-2026 --recursive
+  cd reference/terraform/lab
+  terraform destroy -auto-approve
+  ```
+
+---
+
+## 5. Alertmanager & Gmail SMTP Configuration
+
+To enable real-time email notifications without incurring extra third-party email service costs, **Prometheus Alertmanager** is configured to relay alerts through Google's free SMTP server (`smtp.gmail.com:587`) using TLS encryption and a dedicated **Google App Password**.
 
 ### 1. Security & Secrets Management
 * **Google App Password:** Generated a dedicated 16-character App Password under Google Account Security (with 2-Step Verification enabled), avoiding the use of primary account credentials.
@@ -58,7 +189,7 @@ To enable real-time email notifications without incurring extra third-party emai
 * **Read-Only Volume Mount:** Mounted the secret into the Alertmanager pod at `/etc/alertmanager/secrets/smtp_password` (`readOnly: true`) and referenced it via `smtp_auth_password_file`.
 
 ### 2. Alert Routing & Custom HTML Template (`reference/k8s/alertmanager.yaml`)
-* **SMTP Relay:** Configured `smtp_smarthost: '://gmail.com'` with `smtp_require_tls: true`.
+* **SMTP Relay:** Configured `smtp_smarthost: 'smtp.gmail.com:587'` with `smtp_require_tls: true`.
 * **Grouping & Deduplication:** Alerts are grouped by `alertname` (`group_wait: 10s`, `repeat_interval: 1h`) to prevent inbox flooding during outages.
 * **Dynamic HTML Notifications:** Configured `send_resolved: true` with a custom HTML template that renders a **Red (`[FIRING]`)** banner when an incident starts and a **Green (`[RESOLVED]`)** banner upon automatic recovery.
 
@@ -74,7 +205,7 @@ alerting:
 
 ---
 
-## 5. Operational Exercises & Verification Evidence
+## 6. Operational Exercises & Verification Evidence
 
 ### Exercise 1: End-to-End Application & Observability Health
 Verified that the **RT-Helpdesk** web application is live with the latest Git commit SHA badge, Prometheus actively scrapes the `/metrics` endpoint (`UP`), and Grafana visualizes real-time request rates and target health.
@@ -128,7 +259,7 @@ Simulated a database outage by scaling the PostgreSQL `StatefulSet` to `0` (`kub
 ---
 
 ### Exercise 4: Real-Time Email Alerting & Auto-Recovery (Alertmanager)
-Integrated **Prometheus Alertmanager** with Gmail SMTP (`://gmail.com`) using a custom HTML template and a Kubernetes Secret (`alertmanager-smtp`):
+Integrated **Prometheus Alertmanager** with Gmail SMTP (`smtp.gmail.com:587`) using a custom HTML template and a Kubernetes Secret (`alertmanager-smtp`):
 1. Upon database failure, Alertmanager immediately dispatched a red **`[FIRING]`** HTML alert email.
 2. After scaling the database back to `1` (`kubectl -n helpdesk scale statefulset db --replicas=1`), the cluster self-healed and Alertmanager dispatched a green **`[RESOLVED]`** recovery email.
 
@@ -137,20 +268,4 @@ Integrated **Prometheus Alertmanager** with Gmail SMTP (`://gmail.com`) using a 
 * **Resolved Recovery Email Notification:**
   ![Alertmanager Resolved Email](docs/images/08-email-alert-resolved.png)
 
----
 
-## 6. Quick Operations & Cost-Control Commands
-
-```bash
-# Start EC2 instances and retrieve current public IPs
-aws ec2 start-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
-
-# Open SSH tunnels to Application (8000), Grafana (3000), and Prometheus (9090)
-ssh -L 8000:127.0.0.1:8000 -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 ubuntu@<APP_IP>
-
-# Open SSH tunnel to Jenkins (8080)
-ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
-
-# Stop EC2 instances when idle to eliminate hourly compute charges
-aws ec2 stop-instances --region us-east-1 --instance-ids <CI_INSTANCE_ID> <APP_INSTANCE_ID>
-```
