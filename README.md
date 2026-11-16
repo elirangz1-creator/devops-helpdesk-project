@@ -138,12 +138,12 @@ helpdesk-project/
 ---
 
 ### Week 3: Server Hardening & Kubernetes Deployment (Kind)
-1. **Upload Project Files & Run Host Bootstrap Script on `<APP_IP>`:**
+1. **Upload Project Files & Run Host Bootstrap Script on `<APP_PUBLIC_IP>`:**
    ```bash
-   ssh ubuntu@<APP_IP> "sudo mkdir -p /opt/rt-helpdesk && sudo chown -R ubuntu:ubuntu /opt/rt-helpdesk" # Create project dir & assign ownership
-   scp -r app reference ubuntu@<APP_IP>:/opt/rt-helpdesk/                                              # Copy app & reference files to server
+   ssh ubuntu@<APP_PUBLIC_IP> "sudo mkdir -p /opt/rt-helpdesk && sudo chown -R ubuntu:ubuntu /opt/rt-helpdesk" # Create project dir & assign ownership
+   scp -r app reference ubuntu@<APP_PUBLIC_IP>:/opt/rt-helpdesk/                                              # Copy app & reference files to server
 
-   ssh ubuntu@<APP_IP> "
+   ssh ubuntu@<APP_PUBLIC_IP> "
      sudo apt-get update && sudo apt-get install -y docker.io curl jq postgresql-client awscli         # Install Docker, CLI tools & DB client
      sudo usermod -aG docker ubuntu                                                                    # Grant ubuntu user non-sudo Docker access
      curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64                              # Download Kind binary for Linux AMD64
@@ -155,7 +155,7 @@ helpdesk-project/
    ```
 2. **Deploy Namespaces, RBAC, PostgreSQL & RT-Helpdesk Application:**
    ```bash
-   ssh ubuntu@<APP_IP> "
+   ssh ubuntu@<APP_PUBLIC_IP> "
      cd /opt/rt-helpdesk                                                                               # Navigate to project directory on server
      kubectl create namespace helpdesk                                                                 # Create isolated namespace for app & DB
      kubectl create namespace monitoring                                                               # Create isolated namespace for monitoring
@@ -168,9 +168,9 @@ helpdesk-project/
 ---
 
 ### Week 4: Full CI/CD Automation & Rollback (Jenkins & GHCR)
-1. **Install Jenkins & Configure Dedicated Build Agent (`buildagent`) on `<CI_IP>`:**
+1. **Install Jenkins & Configure Dedicated Build Agent (`buildagent`) on `<CI_PUBLIC_IP>`:**
    ```bash
-   ssh ubuntu@<CI_IP> "
+   ssh ubuntu@<CI_PUBLIC_IP> "
      sudo apt-get update && sudo apt-get install -y fontconfig openjdk-17-jre docker.io git            # Install Java 17, Docker Engine & Git
      sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key                           # Import Jenkins GPG key
      echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null # Add Jenkins apt repo
@@ -187,22 +187,22 @@ helpdesk-project/
    "
    ```
 
-2. **Authorize Jenkins SSH Access to App Server & Configure Pipeline:**
+2. **Authorize Jenkins SSH Access to App Server (via `<APP_PRIVATE_IP>` for internal VPC rollout) & Configure Pipeline:**
    ```bash
-   JENKINS_PUB=$(ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub") # Retrieve Jenkins public SSH key
-   ssh ubuntu@<APP_IP> "echo '$JENKINS_PUB' >> ~/.ssh/authorized_keys"               # Authorize key on App server for deployments
+   JENKINS_PUB=$(ssh ubuntu@<CI_PUBLIC_IP> "sudo cat /var/lib/jenkins/.ssh/id_ed25519.pub") # Retrieve Jenkins public SSH key
+   ssh ubuntu@<APP_PUBLIC_IP> "echo '$JENKINS_PUB' >> ~/.ssh/authorized_keys"               # Authorize key on App server for deployments
    ```
 
    #### Step-by-Step Jenkins UI Setup (`http://localhost:8080`)
    1. **Unlock Jenkins:**
-      * Open an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N`) and browse to `http://localhost:8080`.
-      * Retrieve the initial password via `ssh ubuntu@<CI_IP> "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"`, install suggested plugins, and create your admin user.
+      * Open an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_PUBLIC_IP> -N`) and browse to `http://localhost:8080`.
+      * Retrieve the initial password via `ssh ubuntu@<CI_PUBLIC_IP> "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"`, install suggested plugins, and create your admin user.
    2. **Add SSH Credential for Build Agent (`buildagent-ssh`):**
       * Go to **Manage Jenkins -> Credentials -> System -> Global credentials -> + Add Credentials**.
       * Select **SSH Username with private key**, set **ID** to `buildagent-ssh`, **Username** to `buildagent`, and paste the private key from `/var/lib/jenkins/.ssh/id_ed25519`.
    3. **Add GHCR & Kubeconfig Credentials:**
       * **GHCR Token:** Add a **Username with password** credential (ID: `ghcr-creds`) using your GitHub username and a Personal Access Token (PAT) with `write:packages` scope.
-      * **Restricted Kubeconfig:** Extract the restricted kubeconfig for the Jenkins RBAC service account from `<APP_IP>` and upload it as a **Secret file** credential (ID: `helpdesk-kubeconfig`).
+      * **Restricted Kubeconfig:** Extract the restricted kubeconfig for the Jenkins RBAC service account from `<APP_PUBLIC_IP>` and upload it as a **Secret file** credential (ID: `helpdesk-kubeconfig`).
    4. **Register Dedicated Build Agent (`helpdesk-build`):**
       * Go to **Manage Jenkins -> Nodes -> + New Node**.
       * Enter name **`helpdesk-build`**, select **Permanent Agent**, and click **Create**.
@@ -214,7 +214,7 @@ helpdesk-project/
 
 3. **Rollback Procedure (In Case of Failed Deployment):**
    ```bash
-   ssh ubuntu@<APP_IP> "
+   ssh ubuntu@<APP_PUBLIC_IP> "
      kubectl -n helpdesk rollout undo deployment/api && \   # Revert the 'api' Deployment to the previous stable revision
      kubectl -n helpdesk rollout status deployment/api      # Wait and verify that the rolled-back Pods are healthy and ready
    "
@@ -227,7 +227,7 @@ helpdesk-project/
 ### Week 5: Monitoring, Alertmanager & S3 Backup/Restore
 1. **Deploy Prometheus, Grafana & Alertmanager (Gmail SMTP):**
    ```bash
-   ssh ubuntu@<APP_IP> "
+   ssh ubuntu@<APP_PUBLIC_IP> "
      cd /opt/rt-helpdesk
      kubectl -n monitoring create secret generic alertmanager-smtp \
        --from-literal=smtp_password='<YOUR_16_CHAR_GOOGLE_APP_PASSWORD>'
@@ -251,11 +251,11 @@ helpdesk-project/
 3. **Run Automated S3 Backup & Isolated Database Restore Verification:**
    ```bash
    # Backup to S3
-   ssh ubuntu@<APP_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026" # Run pg_dump inside db-0 & upload dump to S3
+   ssh ubuntu@<APP_PUBLIC_IP> "bash /opt/rt-helpdesk/reference/scripts/k8s-backup.sh helpdesk helpdesk-backups-egetz-2026" # Run pg_dump inside db-0 & upload dump to S3
    aws s3 ls s3://helpdesk-backups-egetz-2026/backups/helpdesk/                                                        # List S3 bucket to confirm backup upload
 
    # Isolated Restore Check
-   ssh ubuntu@<APP_IP> "
+   ssh ubuntu@<APP_PUBLIC_IP> "
      aws s3 cp s3://helpdesk-backups-egetz-2026/backups/helpdesk/<LATEST_DUMP>.dump /tmp/restore.dump && \            # Download latest dump file from S3 to host
      kubectl -n helpdesk cp /tmp/restore.dump db-0:/tmp/restore.dump && \                                             # Copy dump file into the PostgreSQL Pod
      kubectl -n helpdesk exec db-0 -- psql -U postgres -c 'CREATE DATABASE helpdesk_restore_check1;' && \             # Create a clean isolated database for testing
@@ -273,10 +273,10 @@ helpdesk-project/
 * **Open Local SSH Tunnels to Web Interfaces:**
   ```bash
   # App (8000), Prometheus (9090), Grafana (3000)
-  ssh -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@<APP_IP>
+  ssh -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@<APP_PUBLIC_IP>
 
   # Jenkins (8080)
-  ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N
+  ssh -L 8080:127.0.0.1:8080 ubuntu@<CI_PUBLIC_IP> -N
   ```
 * **Pause Lab Between Sessions (Stop EC2 Instances):**
   ```bash
@@ -358,6 +358,17 @@ Scaled PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset d
 
 Because no application, database, CI, or monitoring ports are exposed to the public internet, all web interfaces are accessed securely via **SSH Local Port Forwarding**.
 
+### Network Addressing & IP Usage (`PublicIP` vs. `PrivateIP`)
+
+| Connection Type | Source | Destination | IP Address Used | Persistence |
+| :--- | :--- | :--- | :--- | :--- |
+| **Admin SSH & File Transfers (`scp`)** | Local Workstation | App / CI EC2 Instance | **`PublicIP`** (`<APP_PUBLIC_IP>`, `<CI_PUBLIC_IP>`) | Dynamic (changes on EC2 Stop/Start) |
+| **SSH Local Port Forwarding (Tunnels)** | Local Browser (`localhost`) | App / Monitoring / Jenkins | **`PublicIP`** (`<APP_PUBLIC_IP>`, `<CI_PUBLIC_IP>`) | Dynamic (changes on EC2 Stop/Start) |
+| **Automated CI/CD K8s Rollouts** | Jenkins CI Server (`10.42.1.179`) | Kubernetes App Server (`10.42.1.9`) | **`PrivateIP`** (`<APP_PRIVATE_IP>` — `10.42.1.9`) | Static (fixed inside AWS VPC) |
+| **Internal VPC Traffic** | EC2 Instances | AWS S3 / Internal Services | **`PrivateIP`** (`10.42.1.x`) | Static (fixed inside AWS VPC) |
+
+---
+
 ### 1. Retrieve Current EC2 Public IPs
 If you stopped and restarted your EC2 instances, fetch their updated public IP addresses first:
 ```bash
@@ -366,8 +377,8 @@ AWS_PAGER="" aws ec2 describe-instances --region us-east-1 \
   --query "Reservations[].Instances[].{Name:Tags[?Key=='Name']|[0].Value,InstanceID:InstanceId,PublicIP:PublicIpAddress,PrivateIP:PrivateIpAddress,State:State.Name}" \
   --output table
 ```
-* **`<APP_IP>`:** Public IP of the Kubernetes Application server (`10.42.1.9`).
-* **`<CI_IP>`:** Public IP of the Jenkins CI server (`10.42.1.179`).
+* **`<APP_PUBLIC_IP>`:** Public IP of the Kubernetes Application server (`10.42.1.9`).
+* **`<CI_PUBLIC_IP>`:** Public IP of the Jenkins CI server (`10.42.1.179`).
 
 
 ---
@@ -376,17 +387,17 @@ AWS_PAGER="" aws ec2 describe-instances --region us-east-1 \
 
 | Service | Local URL | SSH Tunnel Command |
 | :--- | :--- | :--- |
-| **RT-Helpdesk App** | `http://localhost:8000` | `ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 ubuntu@<APP_IP> "kubectl -n helpdesk port-forward service/api 8000:8000"` |
-| **Prometheus UI** | `http://localhost:9090` | `ssh -o StrictHostKeyChecking=no -L 9090:127.0.0.1:9090 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/prometheus 9090:9090"` |
-| **Grafana Dashboard** | `http://localhost:3000` | `ssh -o StrictHostKeyChecking=no -L 3000:127.0.0.1:3000 ubuntu@<APP_IP> "kubectl -n monitoring port-forward service/grafana 3000:3000"` |
-| **Jenkins Controller** | `http://localhost:8080` | `ssh -o StrictHostKeyChecking=no -L 8080:127.0.0.1:8080 ubuntu@<CI_IP> -N` |
+| **RT-Helpdesk App** | `http://localhost:8000` | `ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 ubuntu@<APP_PUBLIC_IP> "kubectl -n helpdesk port-forward service/api 8000:8000"` |
+| **Prometheus UI** | `http://localhost:9090` | `ssh -o StrictHostKeyChecking=no -L 9090:127.0.0.1:9090 ubuntu@<APP_PUBLIC_IP> "kubectl -n monitoring port-forward service/prometheus 9090:9090"` |
+| **Grafana Dashboard** | `http://localhost:3000` | `ssh -o StrictHostKeyChecking=no -L 3000:127.0.0.1:3000 ubuntu@<APP_PUBLIC_IP> "kubectl -n monitoring port-forward service/grafana 3000:3000"` |
+| **Jenkins Controller** | `http://localhost:8080` | `ssh -o StrictHostKeyChecking=no -L 8080:127.0.0.1:8080 ubuntu@<CI_PUBLIC_IP> -N` |
 
 ---
 
 ### 3. Combined All-in-One App Server Tunnel (Single Terminal)
 To open **RT-Helpdesk (8000)**, **Prometheus (9090)**, and **Grafana (3000)** simultaneously in one terminal window:
 ```bash
-ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@<APP_IP> \
+ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@<APP_PUBLIC_IP> \
   "kubectl -n helpdesk port-forward service/api 8000:8000 & kubectl -n monitoring port-forward service/prometheus 9090:9090 & kubectl -n monitoring port-forward service/grafana 3000:3000 & wait"
 ```
 
