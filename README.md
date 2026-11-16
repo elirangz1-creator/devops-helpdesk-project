@@ -131,7 +131,7 @@ helpdesk-project/
 3. **Retrieve EC2 Instance Public & Private IPs:**
    ```bash
    aws ec2 describe-instances --region us-east-1 \
-     --query "Reservations[].Instances[].[InstanceId,Tags[?Key=='Name'].Value|[0],PublicIpAddress,PrivateIpAddress,State.Name]" \
+     --query "Reservations[].Instances[].{Name:Tags[?Key=='Name']|[0].Value,InstanceID:InstanceId,PublicIP:PublicIpAddress,PrivateIP:PrivateIpAddress,State:State.Name}" \
      --output table
    ```
 
@@ -363,7 +363,7 @@ If you stopped and restarted your EC2 instances, fetch their updated public IP a
 ```bash
 AWS_PAGER="" aws ec2 describe-instances --region us-east-1 \
   --filters "Name=tag:Name,Values=*helpdesk*" \
-  --query "Reservations[].Instances[].[Tags[?Key=='Name'].Value|[0],InstanceId,PublicIpAddress,PrivateIpAddress,State.Name]" \
+  --query "Reservations[].Instances[].{Name:Tags[?Key=='Name']|[0].Value,InstanceID:InstanceId,PublicIP:PublicIpAddress,PrivateIP:PrivateIpAddress,State:State.Name}" \
   --output table
 ```
 * **`<APP_IP>`:** Public IP of the Kubernetes Application server (`10.42.1.9`).
