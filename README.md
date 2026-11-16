@@ -239,6 +239,11 @@ helpdesk-project/
      kubectl -n monitoring get pods
    "
    ```
+
+   * **What this command does:**
+     * **Secret Injection (`alertmanager-smtp`):** Creates an encrypted Kubernetes Secret for the Gmail App Password so credentials never touch Git.
+     * **Configuration Reload (`--dry-run=client -o yaml | kubectl apply` & `rollout restart`):** Safely updates the existing `prometheus-config` ConfigMap in-place and restarts the Prometheus pod so it immediately connects to Alertmanager.
+
 2. **Generate Traffic & Verify Metrics (Availability, Request Rate, Error Rate):**
    ```bash
    python3 reference/scripts/traffic.py --seconds 180
