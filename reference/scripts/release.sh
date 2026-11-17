@@ -15,6 +15,11 @@ rollback() {
   exit "$code"
 }
 trap rollback ERR
+# Ensure database schema is initialized before rolling out API
+kubectl -n "$ns" delete pod init-db-migration --ignore-not-found=true
+kubectl -n "$ns" run init-db-migration --rm -i --restart=Never --image="$image" \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"init-db-migration","image":"'"$image"'","command":["flask","--app","app","init-db"],"envFrom":[{"configMapRef":{"name":"app-config"}},{"secretRef":{"name":"app-secret"}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"tmp","emptyDir":{}}]}}'
+
 kubectl -n "$ns" set image deployment/api "api=$image"
 kubectl -n "$ns" rollout status deployment/api --timeout=180s
 # Check each replica directly, then exercise the Service and shared database.
