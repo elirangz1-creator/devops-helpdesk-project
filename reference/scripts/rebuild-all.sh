@@ -69,7 +69,7 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 && chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
   curl -LO https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
 "
-scp -o StrictHostKeyChecking=no -r "${REPO_ROOT}/app" "${REPO_ROOT}/reference" ubuntu@"${APP_IP}":/opt/rt-helpdesk/
+scp -o StrictHostKeyChecking=no -r "${REPO_ROOT}/app" "${REPO_ROOT}/reference" "${REPO_ROOT}/monitoring" ubuntu@"${APP_IP}":/opt/rt-helpdesk/
 
 ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   cat << 'KINDCFG' > /tmp/kind-config.yaml
@@ -93,7 +93,7 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   kubectl -n monitoring create secret generic alertmanager-smtp --from-literal=smtp_password='${SMTP_PASS}' --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n monitoring create configmap prometheus-config --from-file=prometheus.yml=reference/k8s/prometheus.yml --from-file=alerts.yml=reference/k8s/alerts.yml --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n monitoring create secret generic grafana-secret --from-literal=admin-password="$(openssl rand -hex 12)" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl apply -f reference/k8s/monitoring.yaml && scp -o StrictHostKeyChecking=no -r monitoring ubuntu@"${APP_IP}":/tmp/ && ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "cd /tmp && bash /opt/rt-helpdesk/reference/scripts/bootstrap-monitoring.sh || bash ~/bootstrap-monitoring.sh" && kubectl apply -f reference/k8s/alertmanager.yaml
+  kubectl apply -f reference/k8s/monitoring.yaml && bash reference/scripts/bootstrap-monitoring.sh && kubectl apply -f reference/k8s/alertmanager.yaml
 "
 
 log_step "6/6: Installing Jenkins CI & Configuring JCasC Automation"
