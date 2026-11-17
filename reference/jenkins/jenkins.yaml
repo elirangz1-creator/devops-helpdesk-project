@@ -1,0 +1,75 @@
+jenkins:
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "APP_HOST"
+            value: "10.42.1.180"
+  systemMessage: RT-Helpdesk Automated CI/CD Server (Configured via JCasC)
+  numExecutors: 0
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+      - id: admin
+        password: ${JENKINS_ADMIN_PASSWORD}
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  nodes:
+  - permanent:
+      name: helpdesk-build
+      remoteFS: /home/buildagent/jenkins
+      numExecutors: 2
+      labelString: docker build helpdesk-build
+      mode: NORMAL
+      launcher:
+        ssh:
+          host: 127.0.0.1
+          port: 22
+          credentialsId: buildagent-ssh
+          sshHostKeyVerificationStrategy: nonVerifyingKeyVerificationStrategy
+credentials:
+  system:
+    domainCredentials:
+    - credentials:
+      - usernamePassword:
+          scope: GLOBAL
+          id: registry-push
+          username: elirangz1-creator
+          password: ${GITHUB_PAT}
+          description: GitHub Container Registry Token
+      - basicSSHUserPrivateKey:
+          scope: GLOBAL
+          id: buildagent-ssh
+          username: buildagent
+          privateKeySource:
+            directEntry:
+              privateKey: ${BUILDAGENT_SSH_KEY}
+          description: SSH Private Key for local buildagent
+      - file:
+          scope: GLOBAL
+          id: helpdesk-kubeconfig
+          fileName: kubeconfig
+          secretBytes: ${KUBECONFIG_BASE64}
+          description: Kubernetes config for App Server
+      - basicSSHUserPrivateKey:
+          scope: GLOBAL
+          id: app-deploy-ssh
+          username: ubuntu
+          description: SSH key for App Server K8s rollout
+          privateKeySource:
+            directEntry:
+              privateKey: ${readFile:/var/lib/jenkins/.ssh/id_ed25519}
+      - file:
+          scope: GLOBAL
+          id: app-known-hosts
+          fileName: known_hosts
+          description: SSH known_hosts for App Server
+          secretBytes: ${readFileBase64:/var/lib/jenkins/app_known_hosts}
+jobs:
+- script: "pipelineJob('helpdesk-release') {\n  description('Automated build, test,\
+    \ and Kubernetes deployment pipeline for RT-Helpdesk')\n  definition {\n    cpsScm\
+    \ {\n      scm {\n        git {\n          remote {\n            url('https://github.com/elirangz1-creator/devops-helpdesk-project.git')\n\
+    \          }\n          branch('*/main')\n        }\n      }\n      // Execute\
+    \ the declarative Jenkinsfile from the repository root\n      scriptPath('reference/Jenkinsfile')\n\
+    \    }\n  }\n}\n"

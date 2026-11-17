@@ -123,7 +123,7 @@ APP_PRIV_IP=$(aws ec2 describe-instances --region us-east-1 \
 
 KUBECONFIG_B64=$(ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "cat ~/.kube/config" | sed "s/127.0.0.1:[0-9]*/${APP_PRIV_IP}:6443/g" | base64 | tr -d '\n')
 
-scp -o StrictHostKeyChecking=no "${REPO_ROOT}/reference/jenkins/jenkins.yaml" ubuntu@"${CI_IP}":/tmp/jenkins.yaml
+sed "s/10\.42\.1\.180/${APP_PRIV_IP}/g" "${REPO_ROOT}/reference/jenkins/jenkins.yaml" > /tmp/jenkins.yaml && scp -o StrictHostKeyChecking=no /tmp/jenkins.yaml ubuntu@"${CI_IP}":/tmp/jenkins.yaml
 
 ssh -o StrictHostKeyChecking=no ubuntu@"${CI_IP}" "
   sudo systemctl stop jenkins
