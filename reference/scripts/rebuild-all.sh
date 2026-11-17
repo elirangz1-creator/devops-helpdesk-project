@@ -151,12 +151,18 @@ EOF
 
   sudo systemctl daemon-reload && sudo systemctl start jenkins
   echo '[SUCCESS] Jenkins is 100% configured and running via JCasC!'
-  sleep 20 && curl -s -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/job/helpdesk-release/build" || true
+  echo "Waiting for Jenkins web UI to become ready..."
+for i in {1..30}; do
+  curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/api/json" >/dev/null 2>&1 && break
+  sleep 3
+done
+CRUMB=$(curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)" || true)
+curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "$CRUMB"} "http://localhost:8080/job/helpdesk-release/build" || true
 "
 # Optional: Seed initial 5 demo tickets once the API pod is ready
 ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
-  kubectl -n helpdesk wait --for=condition=ready pod -l app=helpdesk-api --timeout=180s && \
-  kubectl -n helpdesk exec deploy/helpdesk-api -- flask --app app seed-db || true
+  kubectl -n helpdesk wait --for=condition=ready pod -l app=api --timeout=300s && \
+  kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
 "
 
 log_info "Opening background SSH tunnels for browser access..."
