@@ -15,6 +15,7 @@ read -rp "Enter Terraform state S3 bucket: " TFSTATE_BUCKET
 read -rp "Enter AWS Budget email: " BUDGET_EMAIL
 read -rsp "Enter 16-char Google App Password: " SMTP_PASS && echo ""
 read -rsp "Enter new Jenkins Admin password: " JENKINS_ADMIN_PASSWORD && echo ""
+read -rsp "Enter new Grafana Admin password: " GRAFANA_ADMIN_PASSWORD && echo ""
 read -rsp "Enter GitHub Personal Access Token (PAT): " GITHUB_PAT && echo ""
 
 # Ensure Terraform remote state S3 bucket exists
@@ -92,7 +93,7 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   kubectl -n helpdesk apply -f reference/k8s/init-db.yaml || true
   kubectl -n monitoring create secret generic alertmanager-smtp --from-literal=smtp_password='${SMTP_PASS}' --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n monitoring create configmap prometheus-config --from-file=prometheus.yml=reference/k8s/prometheus.yml --from-file=alerts.yml=reference/k8s/alerts.yml --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n monitoring create secret generic grafana-secret --from-literal=admin-password="$(openssl rand -hex 12)" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n monitoring create secret generic grafana-secret --from-literal=admin-password="${GRAFANA_ADMIN_PASSWORD:-$(openssl rand -hex 12)}" --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f reference/k8s/monitoring.yaml && bash reference/scripts/bootstrap-monitoring.sh && kubectl apply -f reference/k8s/alertmanager.yaml
 "
 
