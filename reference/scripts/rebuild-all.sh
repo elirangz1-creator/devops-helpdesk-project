@@ -79,7 +79,7 @@ networking:
   apiServerAddress: \"0.0.0.0\"
   apiServerPort: 6443
 KINDCFG
-  sg docker -c 'kind get clusters | grep -q "^helpdesk$" || kind create cluster --name helpdesk --config /tmp/kind-config.yaml && mkdir -p ~/.kube && kind get kubeconfig --name helpdesk > ~/.kube/config'
+  sg docker -c 'kind get clusters | grep -q "^helpdesk$" || kind create cluster --name helpdesk --config /tmp/kind-config.yaml && mkdir -p ~/.kube && kind get kubeconfig --name helpdesk > ~/.kube/config && cp ~/.kube/config ~/.kube/helpdesk && chmod 600 ~/.kube/helpdesk'
 "
 
 log_step "5/6: Deploying Kubernetes App, Monitoring & Alertmanager"
