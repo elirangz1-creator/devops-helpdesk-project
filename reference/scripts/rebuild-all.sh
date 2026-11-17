@@ -131,7 +131,7 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${CI_IP}" "
   sudo wget -q -O /tmp/jenkins-plugin-manager.jar https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.13.2/jenkins-plugin-manager-2.13.2.jar
   sudo java -jar /tmp/jenkins-plugin-manager.jar --war /usr/share/java/jenkins.war --plugin-download-directory /var/lib/jenkins/plugins \
     --plugins configuration-as-code job-dsl ssh-slaves workflow-aggregator git credentials-binding timestamper docker-workflow
-  ssh-keyscan -H ${APP_PRIVATE_IP} | sudo tee /var/lib/jenkins/app_known_hosts > /dev/null && sudo chown jenkins:jenkins /var/lib/jenkins/app_known_hosts
+  ssh-keyscan -H ${APP_PRIV_IP} | sudo tee /var/lib/jenkins/app_known_hosts > /dev/null && sudo chown jenkins:jenkins /var/lib/jenkins/app_known_hosts
   sudo mv /tmp/jenkins.yaml /var/lib/jenkins/jenkins.yaml
   sudo chown -R jenkins:jenkins /var/lib/jenkins/plugins /var/lib/jenkins/jenkins.yaml
 
