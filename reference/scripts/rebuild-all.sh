@@ -8,7 +8,7 @@ log_info() { echo -e "\033[1;32m[INFO]\033[0m $1"; }
 log_step "1/6: Gathering user inputs & detecting Admin IP"
 # 1. Gather inputs and detect current Admin IP
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ADMIN_IP="$(curl -4 -fsSL https://amazonaws.com | tr -d "[:space:]")"
+ADMIN_IP="$(curl -4 -fsSL https://check://amazonaws.com | tr -d "[:space:]")"
 SSH_KEY_PATH="${HOME}/.ssh/id_ed25519.pub"
 
 read -rp "Enter Terraform state S3 bucket: " TFSTATE_BUCKET
