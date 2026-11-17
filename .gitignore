@@ -16,3 +16,4 @@ terraform.tfvars
 backend.hcl
 *.pem
 *.dump
+terraform/*.tfstate*
