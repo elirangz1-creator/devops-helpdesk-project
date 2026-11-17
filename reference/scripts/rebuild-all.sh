@@ -160,15 +160,17 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
 
 log_info "Opening background SSH tunnels for browser access..."
 # 6. Open SSH Tunnels in the background for browser access
-#ssh -o StrictHostKeyChecking=no -f -N -L 8080:localhost:8080 ubuntu@"${CI_IP}"
-#ssh -o StrictHostKeyChecking=no -f -N -L 30080:localhost:30080 -L 30090:localhost:30090 -L 30300:localhost:30300 ubuntu@"${APP_IP}"
-
-ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 8080:localhost:8080 ubuntu@"${CI_IP}" > /dev/null 2>&1
-ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 30080:localhost:30080 -L 30090:localhost:30090 -L 30300:localhost:30300 ubuntu@"${APP_IP}" > /dev/null 2>&1
-
+fuser -k 8080/tcp 8000/tcp 9090/tcp 3000/tcp 2>/dev/null || true
+ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 8080:127.0.0.1:8080 ubuntu@"${CI_IP}" > /dev/null 2>&1
+ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f \
+  -L 8000:127.0.0.1:8000 \
+  -L 9090:127.0.0.1:9090 \
+  -L 3000:127.0.0.1:3000 \
+  ubuntu@"${APP_IP}" \
+  "killall kubectl 2>/dev/null || true; nohup kubectl -n helpdesk port-forward service/api 8000:8000 >/dev/null 2>&1 & nohup kubectl -n monitoring port-forward service/prometheus 9090:9090 >/dev/null 2>&1 & nohup kubectl -n monitoring port-forward service/grafana 3000:3000 >/dev/null 2>&1 &" > /dev/null 2>&1
 
 echo "[SUCCESS] All tunnels are active! Access your services at:"
 echo "  - Jenkins CI:   http://localhost:8080"
-echo "  - Helpdesk App: http://localhost:30080"
-echo "  - Prometheus:   http://localhost:30090"
-echo "  - Grafana:      http://localhost:30300"
+echo "  - Helpdesk App: http://localhost:8000"
+echo "  - Prometheus:   http://localhost:9090"
+echo "  - Grafana:      http://localhost:3000"
