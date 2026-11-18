@@ -18,3 +18,4 @@ backend.hcl
 *.dump
 terraform/*.tfstate*
 evidence-data/
+evidence-date/
