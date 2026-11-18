@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_START_EPOCH=$(date +%s)
+SCRIPT_START_TIME=$(date +"%H:%M:%S")
 
 log_step() { echo -e "\n\033[1;36m============================================================\n[STEP] $1\n============================================================\033[0m"; }
 log_info() { echo -e "\033[1;32m[INFO]\033[0m $1"; }
@@ -182,3 +184,15 @@ echo "  - Jenkins CI:   http://localhost:8080"
 echo "  - Helpdesk App: http://localhost:8000"
 echo "  - Prometheus:   http://localhost:9090"
 echo "  - Grafana:      http://localhost:3000"
+
+SCRIPT_END_EPOCH=$(date +%s)
+SCRIPT_END_TIME=$(date +"%H:%M:%S")
+ELAPSED=$((SCRIPT_END_EPOCH - SCRIPT_START_EPOCH))
+MINS=$((ELAPSED / 60))
+SECS=$((ELAPSED % 60))
+
+echo "=========================================="
+echo "  Start Time:     ${SCRIPT_START_TIME}"
+echo "  End Time:       ${SCRIPT_END_TIME}"
+echo "  Total Duration: ${MINS}m ${SECS}s (${ELAPSED}s)"
+echo "=========================================="
