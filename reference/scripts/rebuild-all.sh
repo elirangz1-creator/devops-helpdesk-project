@@ -13,12 +13,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ADMIN_IP="$(curl -4 -fsSL https://icanhazip.com | tr -d "[:space:]")"
 SSH_KEY_PATH="${HOME}/.ssh/id_ed25519.pub"
 
-read -rp "Enter Terraform state S3 bucket: " TFSTATE_BUCKET
-read -rp "Enter AWS Budget email: " BUDGET_EMAIL
-read -rsp "Enter 16-char Google App Password: " SMTP_PASS && echo ""
-read -rsp "Enter new Jenkins Admin password: " JENKINS_ADMIN_PASSWORD && echo ""
-read -rsp "Enter new Grafana Admin password: " GRAFANA_ADMIN_PASSWORD && echo ""
-read -rsp "Enter GitHub Personal Access Token (PAT): " GITHUB_PAT && echo ""
+[ -f "${HOME}/.helpdesk-secrets.env" ] && source "${HOME}/.helpdesk-secrets.env"
+[ -z "${TFSTATE_BUCKET:-}" ] && read -rp "Enter Terraform state S3 bucket: " TFSTATE_BUCKET
+[ -z "${BUDGET_EMAIL:-}" ] && read -rp "Enter AWS Budget email: " BUDGET_EMAIL
+[ -z "${SMTP_PASS:-}" ] && { read -rsp "Enter 16-char Google App Password: " SMTP_PASS && echo ""; }
+[ -z "${JENKINS_ADMIN_PASSWORD:-}" ] && { read -rsp "Enter new Jenkins Admin password: " JENKINS_ADMIN_PASSWORD && echo ""; }
+[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ] && { read -rsp "Enter new Grafana Admin password: " GRAFANA_ADMIN_PASSWORD && echo ""; }
+[ -z "${GITHUB_PAT:-}" ] && { read -rsp "Enter GitHub Personal Access Token (PAT): " GITHUB_PAT && echo ""; }
 
 # Ensure Terraform remote state S3 bucket exists
 if ! aws s3api head-bucket --bucket "${TFSTATE_BUCKET}" >/dev/null 2>&1; then
