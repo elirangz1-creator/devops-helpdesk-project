@@ -165,7 +165,7 @@ EOF
   echo \"Verifying APP_HOST (${APP_PRIV_IP}) inside Jenkins configuration...\"
   VERIFIED=0
   for i in {1..15}; do
-    if grep -q \"${APP_PRIV_IP}\" /var/lib/jenkins/jenkins.yaml && curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1; then
+    if grep -q \"APP_PRIV_IP=${APP_PRIV_IP}\" /etc/systemd/system/jenkins.service.d/jcasc.conf && curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1; then
       VERIFIED=1
       break
     fi
