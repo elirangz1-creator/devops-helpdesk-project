@@ -155,27 +155,35 @@ EOF
 
   sudo systemctl daemon-reload && sudo systemctl start jenkins
   echo '[SUCCESS] Jenkins is 100% configured and running via JCasC!'
-  echo 'Waiting for Jenkins web UI to become ready...'
-  for i in {1..40}; do
-    curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/api/json\" >/dev/null 2>&1 && break
+  echo 'Waiting for Jenkins job helpdesk-release to be ready...'
+  for i in {1..45}; do
+    curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1 && break
     sleep 3
   done
   CRUMB=\$(curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\\\":\\\",//crumb)\" || true)
-  curl -sf -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/build\" || true
+  curl -sf -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/buildWithParameters\" >/dev/null 2>&1 || \
+  curl -sf -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/build\" >/dev/null 2>&1 || true
 "
-# Optional: Wait for Jenkins to deploy the real image, then seed demo tickets
-echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 6 mins)..."
+
+echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 10 mins)..."
 ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" bash -s << 'AEOF'
+DEPLOYED=0
 for i in {1..120}; do
   CUR_IMG=$(kubectl -n helpdesk get deployment api -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "REPLACE_IMAGE")
   if [ "$CUR_IMG" != "REPLACE_IMAGE" ] && [ -n "$CUR_IMG" ]; then
     echo "New image detected: $CUR_IMG"
+    DEPLOYED=1
     break
   fi
   sleep 5
 done
-kubectl -n helpdesk rollout status deployment/api --timeout=180s
-kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
+
+if [ "$DEPLOYED" -eq 1 ]; then
+  kubectl -n helpdesk rollout status deployment/api --timeout=240s
+  kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
+else
+  echo "[WARN] Timeout waiting for Jenkins to update API image. Check Jenkins UI at http://localhost:8080"
+fi
 AEOF
 
 log_info "Opening background SSH tunnels for browser access..."
