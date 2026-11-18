@@ -145,7 +145,8 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${CI_IP}" "
 [Service]
 Environment=\"JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false\"
 Environment=\"CASC_JENKINS_CONFIG=/var/lib/jenkins/jenkins.yaml\"
-Environment=\"JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}\"
+Environment=\"JENKINS_ADMIN_PASSWORD=${JENKINS_ADMIN_PASSWORD}
+APP_PRIV_IP=${APP_PRIV_IP}\"
 Environment=\"GITHUB_PAT=${GITHUB_PAT}\"
 Environment=\"KUBECONFIG_BASE64=${KUBECONFIG_B64}\"
 EOF

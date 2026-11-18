@@ -3,7 +3,7 @@ jenkins:
     - envVars:
         env:
           - key: "APP_HOST"
-            value: "10.42.1.180"
+            value: "${APP_PRIV_IP}"
   systemMessage: RT-Helpdesk Automated CI/CD Server (Configured via JCasC)
   numExecutors: 0
   securityRealm:
