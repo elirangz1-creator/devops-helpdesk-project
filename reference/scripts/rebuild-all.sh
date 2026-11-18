@@ -162,7 +162,7 @@ curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "$CRUMB"} "htt
 "
 # Optional: Seed initial 5 demo tickets once the API pod is ready
 ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
-  kubectl -n helpdesk wait --for=condition=ready pod -l app=api --timeout=300s && \
+  kubectl -n helpdesk wait --for=condition=ready pod -l app=api --timeout=360s && \
   kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
 "
 
