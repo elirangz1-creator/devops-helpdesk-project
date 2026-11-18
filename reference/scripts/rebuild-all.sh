@@ -93,6 +93,7 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   kubectl -n helpdesk create secret generic app-secret --from-literal=SECRET_KEY=\$(openssl rand -hex 32) --from-literal=DB_PASSWORD="\$DB_PASS" --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n helpdesk create secret generic db-secret --from-literal=POSTGRES_DB=helpdesk --from-literal=POSTGRES_USER=helpdesk --from-literal=POSTGRES_PASSWORD="\$DB_PASS" --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n helpdesk apply -f reference/k8s/app.yaml
+  kubectl -n helpdesk wait --for=condition=ready pod/db-0 --timeout=180s
   kubectl -n helpdesk apply -f reference/k8s/init-db.yaml || true
   kubectl -n monitoring create secret generic alertmanager-smtp --from-literal=smtp_password='${SMTP_PASS}' --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n monitoring create configmap prometheus-config --from-file=prometheus.yml=reference/k8s/prometheus.yml --from-file=alerts.yml=reference/k8s/alerts.yml --dry-run=client -o yaml | kubectl apply -f -
@@ -154,15 +155,13 @@ EOF
 
   sudo systemctl daemon-reload && sudo systemctl start jenkins
   echo '[SUCCESS] Jenkins is 100% configured and running via JCasC!'
-  ssh -o StrictHostKeyChecking=no ubuntu@"${CI_IP}" bash -s << JEOF
-echo "Waiting for Jenkins web UI to become ready..."
-for i in {1..40}; do
-  curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/api/json" >/dev/null 2>&1 && break
-  sleep 3
-done
-CRUMB=$(curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)" || true)
-curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "\$CRUMB"} "http://localhost:8080/job/helpdesk-release/build" || true
-JEOF
+  echo 'Waiting for Jenkins web UI to become ready...'
+  for i in {1..40}; do
+    curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/api/json" >/dev/null 2>&1 && break
+    sleep 3
+  done
+  CRUMB=$(curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)" || true)
+  curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "$CRUMB"} "http://localhost:8080/job/helpdesk-release/build" || true
 "
 # Optional: Wait for Jenkins to deploy the real image, then seed demo tickets
 echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 6 mins)..."
