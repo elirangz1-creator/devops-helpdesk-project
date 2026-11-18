@@ -87,8 +87,9 @@ log_step "5/6: Deploying Kubernetes App, Monitoring & Alertmanager"
 # 4a. Deploy Helpdesk App, Monitoring & Alertmanager
 ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   cd /opt/rt-helpdesk && kubectl create namespace helpdesk --dry-run=client -o yaml | kubectl apply -f - && kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n helpdesk apply -f reference/k8s/release-rbac.yaml && kubectl -n helpdesk create secret generic app-secret --from-literal=DB_PASSWORD="$(openssl rand -hex 16)" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n helpdesk create secret generic db-secret --from-literal=POSTGRES_PASSWORD="$(kubectl -n helpdesk get secret app-secret -o jsonpath={.data.DB_PASSWORD} | base64 -d)" --dry-run=client -o yaml | kubectl apply -f -
+  DB_PASS=\$(openssl rand -hex 16)
+  kubectl -n helpdesk create secret generic app-secret --from-literal=SECRET_KEY=\$(openssl rand -hex 32) --from-literal=DB_PASSWORD="\$DB_PASS" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n helpdesk create secret generic db-secret --from-literal=POSTGRES_DB=helpdesk --from-literal=POSTGRES_USER=helpdesk --from-literal=POSTGRES_PASSWORD="\$DB_PASS" --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n helpdesk apply -f reference/k8s/app.yaml
   kubectl -n helpdesk apply -f reference/k8s/init-db.yaml || true
   kubectl -n monitoring create secret generic alertmanager-smtp --from-literal=smtp_password='${SMTP_PASS}' --dry-run=client -o yaml | kubectl apply -f -

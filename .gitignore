@@ -17,3 +17,4 @@ backend.hcl
 *.pem
 *.dump
 terraform/*.tfstate*
+evidence-data/
