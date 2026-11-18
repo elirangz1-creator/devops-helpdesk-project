@@ -156,53 +156,29 @@ EOF
 
   sudo systemctl daemon-reload && sudo systemctl start jenkins
   echo '[SUCCESS] Jenkins is 100% configured and running via JCasC!'
-  echo 'Waiting for Jenkins job helpdesk-release to be ready...'
+  echo 'Waiting for Jenkins web UI to initialize...'
   for i in {1..45}; do
-    curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1 && break
+    curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/api/json\" >/dev/null 2>&1 && break
     sleep 3
   done
-  CRUMB=\$(curl -sf -c /tmp/jcookie.txt -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\\\":\\\",//crumb)\" || true)
-  curl -sf -b /tmp/jcookie.txt -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/buildWithParameters\" >/dev/null 2>&1 || \
-  curl -sf -b /tmp/jcookie.txt -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/build\" >/dev/null 2>&1 || true
-"
 
-echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 10 mins)..."
-ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" bash -s << 'AEOF'
-DEPLOYED=0
-for i in {1..120}; do
-  CUR_IMG=$(kubectl -n helpdesk get deployment api -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "REPLACE_IMAGE")
-  if [ "$CUR_IMG" != "REPLACE_IMAGE" ] && [ -n "$CUR_IMG" ]; then
-    echo "New image detected: $CUR_IMG"
-    DEPLOYED=1
-    break
+  echo \"Verifying APP_HOST (${APP_PRIV_IP}) inside Jenkins configuration...\"
+  VERIFIED=0
+  for i in {1..15}; do
+    if grep -q \"${APP_PRIV_IP}\" /var/lib/jenkins/jenkins.yaml && curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1; then
+      VERIFIED=1
+      break
+    fi
+    sleep 2
+  done
+
+  if [ \"\$VERIFIED\" -eq 1 ]; then
+    echo \"[SUCCESS] Jenkins is configured and APP_HOST is verified as ${APP_PRIV_IP}!\"
+  else
+    echo \"[ERROR] Failed to verify APP_HOST (${APP_PRIV_IP}) in Jenkins configuration.\"
+    exit 1
   fi
-  sleep 5
-done
-
-if [ "$DEPLOYED" -eq 1 ]; then
-  kubectl -n helpdesk rollout status deployment/api --timeout=240s
-  kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
-else
-  echo "[WARN] Timeout waiting for Jenkins to update API image. Check Jenkins UI at http://localhost:8080"
-fi
-AEOF
-
-log_info "Opening background SSH tunnels for browser access..."
-# 6. Open SSH Tunnels in the background for browser access
-fuser -k 8080/tcp 8000/tcp 9090/tcp 3000/tcp 2>/dev/null || true
-ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f -N -L 8080:127.0.0.1:8080 ubuntu@"${CI_IP}" > /dev/null 2>&1
-ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -f \
-  -L 8000:127.0.0.1:8000 \
-  -L 9090:127.0.0.1:9090 \
-  -L 3000:127.0.0.1:3000 \
-  ubuntu@"${APP_IP}" \
-  "killall kubectl 2>/dev/null || true; nohup kubectl -n helpdesk port-forward service/api 8000:8000 >/dev/null 2>&1 & nohup kubectl -n monitoring port-forward service/prometheus 9090:9090 >/dev/null 2>&1 & nohup kubectl -n monitoring port-forward service/grafana 3000:3000 >/dev/null 2>&1 &" > /dev/null 2>&1
-
-echo "[SUCCESS] All tunnels are active! Access your services at:"
-echo "  - Jenkins CI:   http://localhost:8080"
-echo "  - Helpdesk App: http://localhost:8000"
-echo "  - Prometheus:   http://localhost:9090"
-echo "  - Grafana:      http://localhost:3000"
+"
 
 SCRIPT_END_EPOCH=$(date +%s)
 SCRIPT_END_TIME=$(date +"%H:%M:%S")
@@ -211,7 +187,16 @@ MINS=$((ELAPSED / 60))
 SECS=$((ELAPSED % 60))
 
 echo "=========================================="
+echo "[SUCCESS] Infrastructure & CI/CD Setup Complete!"
+echo "  App Server Public IP:  ${APP_IP}"
+echo "  App Server Private IP: ${APP_PRIV_IP}"
+echo "  CI Server Public IP:   ${CI_IP}"
+echo "------------------------------------------"
 echo "  Start Time:     ${SCRIPT_START_TIME}"
 echo "  End Time:       ${SCRIPT_END_TIME}"
 echo "  Total Duration: ${MINS}m ${SECS}s (${ELAPSED}s)"
 echo "=========================================="
+echo "Next steps:"
+echo "  1. Run 'helpdesk-tunnel' to open all service tunnels."
+echo "  2. Open http://localhost:8080/job/helpdesk-release/ and click 'Build Now'."
+echo "  3. Once build completes, access App (8000), Prometheus (9090), and Grafana (3000)."
