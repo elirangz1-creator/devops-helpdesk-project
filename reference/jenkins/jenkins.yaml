@@ -73,3 +73,24 @@ jobs:
     \          }\n          branch('*/main')\n        }\n      }\n      // Execute\
     \ the declarative Jenkinsfile from the repository root\n      scriptPath('reference/Jenkinsfile')\n\
     \    }\n  }\n}\n"
+- script: |
+    pipelineJob('agent-verify') {
+      description('Verify dedicated build agent user and Docker engine availability')
+      definition {
+        cps {
+          script("""
+            pipeline {
+              agent { label 'helpdesk-build' }
+              stages {
+                stage('Verify Build Agent') {
+                  steps {
+                    sh 'id -un && docker version'
+                  }
+                }
+              }
+            }
+          """.stripIndent())
+          sandbox(true)
+        }
+      }
+    }
