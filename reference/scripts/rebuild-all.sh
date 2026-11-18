@@ -154,19 +154,30 @@ EOF
 
   sudo systemctl daemon-reload && sudo systemctl start jenkins
   echo '[SUCCESS] Jenkins is 100% configured and running via JCasC!'
-  echo "Waiting for Jenkins web UI to become ready..."
-for i in {1..30}; do
+  ssh -o StrictHostKeyChecking=no ubuntu@"${CI_IP}" bash -s << JEOF
+echo "Waiting for Jenkins web UI to become ready..."
+for i in {1..40}; do
   curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/api/json" >/dev/null 2>&1 && break
   sleep 3
 done
-CRUMB=$(curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)" || true)
-curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "$CRUMB"} "http://localhost:8080/job/helpdesk-release/build" || true
+CRUMB=$(curl -sf -u "admin:${JENKINS_ADMIN_PASSWORD}" "http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)" || true)
+curl -sf -X POST -u "admin:${JENKINS_ADMIN_PASSWORD}" ${CRUMB:+-H "\$CRUMB"} "http://localhost:8080/job/helpdesk-release/build" || true
+JEOF
 "
-# Optional: Seed initial 5 demo tickets once the API pod is ready
-ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
-  kubectl -n helpdesk wait --for=condition=ready pod -l app=api --timeout=360s && \
-  kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
-"
+# Optional: Wait for Jenkins to deploy the real image, then seed demo tickets
+echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 6 mins)..."
+ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" bash -s << 'AEOF'
+for i in {1..72}; do
+  CUR_IMG=$(kubectl -n helpdesk get deployment api -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "REPLACE_IMAGE")
+  if [ "$CUR_IMG" != "REPLACE_IMAGE" ] && [ -n "$CUR_IMG" ]; then
+    echo "New image detected: $CUR_IMG"
+    break
+  fi
+  sleep 5
+done
+kubectl -n helpdesk rollout status deployment/api --timeout=180s
+kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
+AEOF
 
 log_info "Opening background SSH tunnels for browser access..."
 # 6. Open SSH Tunnels in the background for browser access
