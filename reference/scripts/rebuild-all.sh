@@ -160,9 +160,9 @@ EOF
     curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/job/helpdesk-release/api/json\" >/dev/null 2>&1 && break
     sleep 3
   done
-  CRUMB=\$(curl -sf -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\\\":\\\",//crumb)\" || true)
-  curl -sf -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/buildWithParameters\" >/dev/null 2>&1 || \
-  curl -sf -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/build\" >/dev/null 2>&1 || true
+  CRUMB=\$(curl -sf -c /tmp/jcookie.txt -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \"http://localhost:8080/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\\\":\\\",//crumb)\" || true)
+  curl -sf -b /tmp/jcookie.txt -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/buildWithParameters\" >/dev/null 2>&1 || \
+  curl -sf -b /tmp/jcookie.txt -X POST -u \"admin:${JENKINS_ADMIN_PASSWORD}\" \${CRUMB:+-H \"\$CRUMB\"} \"http://localhost:8080/job/helpdesk-release/build\" >/dev/null 2>&1 || true
 "
 
 echo "Waiting for Jenkins pipeline to build and deploy the API image (up to 10 mins)..."
