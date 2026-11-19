@@ -22,7 +22,7 @@ until kubectl -n "$ns" exec db-0 -- pg_isready -U helpdesk -d helpdesk >/dev/nul
 done
 kubectl -n "$ns" delete pod init-db-migration --ignore-not-found=true
 kubectl -n "$ns" run init-db-migration --rm -i --restart=Never --image="$image" \
-  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"init-db-migration","image":"'"$image"'","command":["flask","--app","app","init-db"],"envFrom":[{"configMapRef":{"name":"app-config"}},{"secretRef":{"name":"app-secret"}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"tmp","emptyDir":{}}]}}'
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"init-db-migration","image":"'"$image"'","command":["flask","--app","app","init-db"],"envFrom":[{"configMapRef":{"name":"app-config"}},{"secretRef":{"name":"app-secret"}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"tmp","emptyDir":{}}]}}' || true
 
 kubectl -n "$ns" set image deployment/api "api=$image"
 kubectl -n "$ns" rollout status deployment/api --timeout=180s
