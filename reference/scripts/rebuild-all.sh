@@ -95,6 +95,9 @@ ssh -o StrictHostKeyChecking=no ubuntu@"${APP_IP}" "
   kubectl -n helpdesk create secret generic db-secret --from-literal=POSTGRES_DB=helpdesk --from-literal=POSTGRES_USER=helpdesk --from-literal=POSTGRES_PASSWORD="\$DB_PASS" --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n helpdesk apply -f reference/k8s/app.yaml
   kubectl -n helpdesk wait --for=condition=ready pod/db-0 --timeout=180s
+  kubectl -n helpdesk set image deployment/api api=ghcr.io/elirangz1-creator/rt-helpdesk@sha256:fd56d47e38757ab933aecb6f4467bfa52182565596fc123ea0d5e6fed0ebd9bb
+  kubectl -n helpdesk rollout status deployment/api --timeout=180s
+  kubectl -n helpdesk exec deploy/api -- flask --app app seed-db || true
   kubectl -n helpdesk apply -f reference/k8s/init-db.yaml || true
   kubectl -n monitoring create secret generic alertmanager-smtp --from-literal=smtp_password='${SMTP_PASS}' --dry-run=client -o yaml | kubectl apply -f -
   kubectl -n monitoring create configmap prometheus-config --from-file=prometheus.yml=reference/k8s/prometheus.yml --from-file=alerts.yml=reference/k8s/alerts.yml --dry-run=client -o yaml | kubectl apply -f -
