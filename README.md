@@ -342,7 +342,7 @@ To enable real-time email notifications without incurring extra third-party emai
 Scaled PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset db --replicas=0`) to verify that the API stays alive (Liveness passes), fails Readiness, returns **`503 Service Unavailable`**, and triggers `HelpdeskDatabaseUnavailable` (`FIRING`) in Prometheus.
 
 * **API Graceful Degradation (`503 Service Unavailable`):**
-  ![API 503 Response](docs/images/05-outage-503-response.png)
+  ![API 503 Response](docs/images/503.png)
 * **Prometheus Firing Alert (`http://localhost:9090/alerts`):**
   ![Prometheus Firing Alert](docs/images/06-prometheus-firing-alert.png)
 
