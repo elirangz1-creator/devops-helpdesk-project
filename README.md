@@ -1,4 +1,4 @@
-## RT-Helpdesk — End-to-End Cloud-Native DevOps Project
+# RT-Helpdesk — End-to-End Cloud-Native DevOps Project
 
 A production-grade deployment and automation pipeline for the **RT-Helpdesk** ticketing application. This project covers local containerization, Infrastructure as Code (IaC) on AWS, Kubernetes orchestration, automated CI/CD with Jenkins, real-time observability with Prometheus & Grafana, automated email alerting via Alertmanager, and verified disaster recovery.
 
