@@ -185,6 +185,7 @@ EOF
     exit 1
   fi
 "
+# 6.Script execution SUM 
 
 SCRIPT_END_EPOCH=$(date +%s)
 SCRIPT_END_TIME=$(date +"%H:%M:%S")
