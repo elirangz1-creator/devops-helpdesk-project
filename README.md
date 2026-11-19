@@ -306,12 +306,9 @@ To enable real-time email notifications without incurring extra third-party emai
 
 * **Kubernetes Secret (`alertmanager-smtp`):** Stores the App Password securely inside the `monitoring` namespace and mounts it read-only at `/etc/alertmanager/secrets/smtp_password`.
 * **Dynamic HTML Notifications (`reference/k8s/alertmanager.yaml`):** Configured `send_resolved: true` with a custom HTML template rendering a **Red (`[FIRING]`)** banner on outage and a **Green (`[RESOLVED]`)** banner upon recovery.
+  ![Alertmanager Configuration Diff](docs/images/05-alertmanager-config.png)
 * **Prometheus Integration (`reference/k8s/prometheus.yml`):** Routes alerts to `alertmanager.monitoring.svc.cluster.local:9093`.
-
-![Alertmanager Configuration Diff](docs/images/05-alertmanager-config.png)
-
-![Prometheus Alertmanager Target Configuration](docs/images/06-prometheus-alertmanager-link.png)
-
+  ![Prometheus Alertmanager Target Configuration](docs/images/06-prometheus-alertmanager-link.png)
 
 ---
 
