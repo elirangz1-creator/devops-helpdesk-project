@@ -409,3 +409,65 @@ ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L
   ```bash
   pkill -f "ssh .*127.0.0.1:"
   ```
+## End-to-End Automated Environment Provisioning (`rebuild-all.sh`)
+
+OPTIONAL: To eliminate manual configuration drift and ensure full reproducibility across environments, this repository includes a single-command end-to-end provisioning script (`reference/scripts/rebuild-all.sh`).
+
+### What It Automates
+1. **Zero-Touch Secrets & Network Detection:** Securely loads credentials from a local out-of-repo file (`~/.helpdesk-secrets.env`), dynamically detects the administrator's public IP for security group restrictions, and verifies the S3 remote state backend.
+2. **Infrastructure as Code (Terraform):** Provisions the complete AWS VPC, EC2 instances (`app` and `ci`), IAM roles, security groups, and AWS Billing Budget alerts.
+3. **Kubernetes Cluster & Application Bootstrap:** Installs Docker, Kind, and `kubectl` on the application node, initializes the cluster, generates runtime secrets, deploys the PostgreSQL database and Helpdesk API from an immutable GHCR digest, and runs database schema initialization (`init-db`) and seeding (`seed-db`).
+4. **Full Observability Stack:** Deploys Prometheus, Grafana, and Alertmanager with pre-configured scrape targets, alert rules, and SMTP secrets.
+5. **Jenkins Configuration as Code (JCasC):** Installs Jenkins and a dedicated `buildagent`, exchanges SSH keys between nodes, installs required plugins via `jenkins-plugin-manager`, and applies `jenkins.yaml` via JCasC—automatically injecting the new internal `APP_HOST` IP and verifying readiness.
+
+### Engineering & Learning Value
+* **True Reproducibility & Cost Efficiency:** Enables spinning up the entire cloud stack from scratch in minutes for testing or demonstrations and tearing it down cleanly afterward with zero manual setup steps.
+* **Security Best Practices:** Enforces strict separation between version-controlled infrastructure code and sensitive credentials, dynamically generating Kubernetes secrets at runtime.
+* **Full-Stack DevOps Integration:** Bridges cloud networking, container orchestration, declarative CI/CD configuration, and automated monitoring into a cohesive, idempotent workflow.
+
+### Quick Usage (3-Step Workflow)
+```bash
+# 1. Provision the entire infrastructure, Kubernetes cluster, monitoring, and Jenkins CI
+bash reference/scripts/rebuild-all.sh
+
+# 2. Open SSH port-forwarding tunnels to access all interfaces locally
+helpdesk-tunnel
+
+# 3. Trigger the CI/CD pipeline in Jenkins:
+#    Open http://localhost:8080/job/helpdesk-release/ and click "Build Now"
+#    to build, push, and roll out the latest commit from GitHub.
+```
+
+---
+
+### Recommended Shell Aliases & Lifecycle Shortcuts
+
+For fast daily management and AWS cost optimization, it is recommended to define shell aliases and helper functions in your shell profile (`~/.zshrc` for Zsh or `~/.bashrc` for Bash).
+
+#### How to Create and Activate the Aliases
+1. **Store Credentials Locally (One-Time Setup):** Create `~/.helpdesk-secrets.env` outside the Git repository (`chmod 600 ~/.helpdesk-secrets.env`) containing your `TFSTATE_BUCKET`, `BUDGET_EMAIL`, `SMTP_PASS`, `JENKINS_ADMIN_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, and `GITHUB_PAT`.
+2. **Add Definitions to Shell Profile:** Append the aliases and functions below to `~/.zshrc` (or `~/.bashrc`).
+3. **Reload Shell Configuration:** Run `source ~/.zshrc` (or `source ~/.bashrc`) so the shortcuts become immediately available in your terminal.
+
+#### Alias Reference & Underlying Commands
+
+| Alias | Purpose | Underlying Command / Logic |
+| :--- | :--- | :--- |
+| **`aws-up`** | Full Provisioning | `bash ~/devops/projects/helpdesk-project/reference/scripts/rebuild-all.sh` — Runs the full end-to-end Terraform, Kubernetes, Monitoring, and Jenkins JCasC setup. |
+| **`aws-down`** | Full Teardown | `(cd ~/devops/projects/helpdesk-project/reference/terraform/lab && terraform destroy)` — Destroys all Terraform-managed AWS resources to eliminate ongoing cloud costs. |
+| **`aws-stop`** | Pause Instances | `aws ec2 stop-instances --instance-ids <APP_ID> <CI_ID>` — Queries running `rt-helpdesk` EC2 instance IDs and stops them cleanly at the end of a work session. |
+| **`aws-start`** | Resume Instances | `aws ec2 start-instances --instance-ids <APP_ID> <CI_ID>` — Starts stopped EC2 instances, updates dynamic IP configurations (`APP_PRIV_IP` and `known_hosts`), and restores cluster connectivity. |
+| **`aws-check`** | Status Audit | `aws ec2 describe-instances --filters "Name=tag:Name,Values=*rt-helpdesk*" --output table` — Lists all project EC2 instances with their current state (`running`, `stopped`, or empty after `aws-down`). |
+| **`helpdesk-tunnel`** | Local Port-Forwarding | Opens background SSH tunnels (`ssh -L`) forwarding local ports **`8080`** (Jenkins), **`8000`** (Helpdesk App via `kubectl port-forward`), **`9090`** (Prometheus), and **`3000`** (Grafana) to `127.0.0.1`. |
+
+#### Example Shell Profile Block (`~/.zshrc` / `~/.bashrc`)
+```bash
+# RT-Helpdesk Lifecycle Shortcuts
+alias aws-up='bash ~/devops/projects/helpdesk-project/reference/scripts/rebuild-all.sh'
+alias aws-down='(cd ~/devops/projects/helpdesk-project/reference/terraform/lab && terraform destroy)'
+alias aws-check='aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query "Reservations[].Instances[].[Tags[?Key==\`Name\`]|[0].Value,InstanceId,State.Name,PublicIpAddress]" --output table'
+alias aws-stop='IDS=\((aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].InstanceId" --output text) && [ -n "\)IDS" ] && aws ec2 stop-instances --region us-east-1 --instance-ids \$IDS'
+alias aws-start='IDS=\((aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=stopped" --query "Reservations[].Instances[].InstanceId" --output text) && [ -n "\)IDS" ] && aws ec2 start-instances --region us-east-1 --instance-ids \$IDS'
+```
+
+> **Tip:** Always run **`aws-check`** after **`aws-down`** to verify that zero residual EC2 instances remain active in your AWS account.
