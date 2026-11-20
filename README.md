@@ -358,6 +358,14 @@ Scaled PostgreSQL `StatefulSet` to `0` (`kubectl -n helpdesk scale statefulset d
 * **Resolved Recovery Email Notification:**
   ![Alertmanager Resolved Email](docs/images/08-email-alert-resolved.png)
 
+### Exercise 5: Final Environment Teardown & Zero-Cost Audit
+Executed `terraform destroy` (`aws-down`) to remove all 18 managed lab resources and verified via AWS CLI (`aws-check`) that zero EC2 instances, backup buckets, or custom VPCs remain active.
+
+* **Terraform Full Resource Destruction (`Destroy complete! Resources: 18 destroyed.`):**
+  ![Terraform Destroy Complete](docs/images/09-terraform-destroy.png)
+* **Post-Teardown AWS Account Audit (Zero Residual Compute or VPC Resources):**
+  ![AWS Teardown Verification](docs/images/10-aws-teardown-audit.png)
+
 ---
 
 ##  Quick Access & SSH Tunneling Guide
