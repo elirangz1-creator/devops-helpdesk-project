@@ -415,9 +415,9 @@ ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L
   ```bash
   pkill -f "ssh .*127.0.0.1:"
   ```
-## End-to-End Automated Environment Provisioning (`rebuild-all.sh`)
+## 7. End-to-End Automated Environment Provisioning (`rebuild-all.sh`)
 
-OPTIONAL: To eliminate manual configuration drift and ensure full reproducibility across environments, this repository includes a single-command end-to-end provisioning script (`reference/scripts/rebuild-all.sh`).
+To eliminate manual configuration drift and ensure full reproducibility across environments, this repository includes a single-command end-to-end provisioning script (`reference/scripts/rebuild-all.sh`).
 
 ### What It Automates
 1. **Zero-Touch Secrets & Network Detection:** Securely loads credentials from a local out-of-repo file (`~/.helpdesk-secrets.env`), dynamically detects the administrator's public IP for security group restrictions, and verifies the S3 remote state backend.
@@ -464,6 +464,55 @@ For fast daily management and AWS cost optimization, it is recommended to define
 | **`aws-stop`** | Pause Instances | `aws ec2 stop-instances --instance-ids <APP_ID> <CI_ID>` — Queries running `rt-helpdesk` EC2 instance IDs and stops them cleanly at the end of a work session. |
 | **`aws-start`** | Resume Instances | `aws ec2 start-instances --instance-ids <APP_ID> <CI_ID>` — Starts stopped EC2 instances, updates dynamic IP configurations (`APP_PRIV_IP` and `known_hosts`), and restores cluster connectivity. |
 | **`aws-check`** | Status Audit | `aws ec2 describe-instances --filters "Name=tag:Name,Values=*rt-helpdesk*" --output table` — Lists all project EC2 instances with their current state (`running`, `stopped`, or empty after `aws-down`). |
+| **`helpdesk-tunnel`** | Local Port-Forwarding | Opens background SSH tunnels (`ssh -L`) forwarding local ports **`8080`** (Jenkins), **`8000`** (Helpdesk App via `kubectl port-forward`), **`9090`** (Prometheus), and **`3000`** (Grafana) to `127.0.0.1`. |
 
+#### Example Shell Profile Block (`~/.zshrc` / `~/.bashrc`)
+```bash
+# RT-Helpdesk Lifecycle Shortcuts
+alias aws-up='bash ~/devops/projects/helpdesk-project/reference/scripts/rebuild-all.sh'
+alias aws-down='(cd ~/devops/projects/helpdesk-project/reference/terraform/lab && terraform destroy)'
+alias aws-check='aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query "Reservations[].Instances[].[Tags[?Key==\`Name\`]|[0].Value,InstanceId,State.Name,PublicIpAddress]" --output table'
+alias aws-stop='IDS=\((aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].InstanceId" --output text) && [ -n "\)IDS" ] && aws ec2 stop-instances --region us-east-1 --instance-ids \$IDS'
+alias aws-start='IDS=\((aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*" "Name=instance-state-name,Values=stopped" --query "Reservations[].Instances[].InstanceId" --output text) && [ -n "\)IDS" ] && aws ec2 start-instances --region us-east-1 --instance-ids \$IDS'
+
+# Opens secure local SSH port-forwarding tunnels to all 4 project web interfaces
+helpdesk-tunnel() {
+  # 1. Dynamically query AWS EC2 for the current Public IPs of the running CI and App servers
+  echo "Fetching live IPs from AWS..."
+  local CI_IP APP_IP
+  CI_IP=\$(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*ci*" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+  APP_IP=\$(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=*rt-helpdesk*app*" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+
+  # 2. Validate that both instances are running before attempting to open SSH connections
+  if [ -z "\(CI_IP" ] ert{}ert{} [ "\)CI_IP" = "None" ] || [ -z "\(APP_IP" ] ert{}ert{} [ "\)APP_IP" = "None" ]; then
+    echo "Error: Could not find running CI or App instances."
+    return 1
+  fi
+
+  # 3. Start a background SSH tunnel mapping local port 8080 to Jenkins on the CI server
+  echo "Opening Jenkins tunnel (http://localhost:8080 -> \${CI_IP})..."
+  ssh -o StrictHostKeyChecking=no -N -L 8080:127.0.0.1:8080 ubuntu@"\$CI_IP" &
+  local CI_PID=\$!
+
+  # 4. Register a cleanup trap to terminate the background Jenkins tunnel when Ctrl+C is pressed
+  trap "kill \$CI_PID 2>/dev/null || true" EXIT INT TERM
+
+  # 5. Open an SSH session to the App server forwarding ports 8000 (App), 9090 (Prometheus), and 3000 (Grafana)
+  #    while running kubectl port-forward inside the remote Kind cluster
+  echo "Opening App, Prometheus & Grafana tunnels (8000, 9090, 3000 -> \${APP_IP})..."
+  echo "Keep this terminal open while browsing. Press Ctrl+C to close tunnels."
+  ssh -o StrictHostKeyChecking=no -L 8000:127.0.0.1:8000 -L 9090:127.0.0.1:9090 -L 3000:127.0.0.1:3000 ubuntu@"\$APP_IP" "
+    kubectl -n helpdesk port-forward service/api 8000:8000 >/dev/null 2>&1 &
+    kubectl -n monitoring port-forward service/prometheus 9090:9090 >/dev/null 2>&1 &
+    kubectl -n monitoring port-forward service/grafana 3000:3000 >/dev/null 2>&1 &
+    wait
+  "
+}
+```
+
+#### How `helpdesk-tunnel` Works
+* **Dynamic IP Discovery:** Automatically fetches the latest public IP addresses of the `ci` and `app` EC2 instances from AWS, eliminating the need to update SSH commands after stop/start cycles.
+* **Multi-Service Forwarding:** Simultaneously exposes **Jenkins** (`localhost:8080`), the **Helpdesk Web UI** (`localhost:8000`), **Prometheus** (`localhost:9090`), and **Grafana** (`localhost:3000`) over encrypted SSH tunnels without opening public inbound ports in AWS Security Groups.
+* **Clean Teardown (`trap`):** Ensures background SSH processes are cleanly terminated when exiting with `Ctrl+C`.
 
 > **Tip:** Always run **`aws-check`** after **`aws-down`** to verify that zero residual EC2 instances remain active in your AWS account.
