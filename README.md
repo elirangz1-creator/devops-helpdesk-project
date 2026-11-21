@@ -317,6 +317,8 @@ To enable real-time email notifications without incurring extra third-party emai
 ---
 
 ## 6. Operational Exercises & Verification Evidence
+> **Verification Evidence Directory:** All full-resolution screenshots, CLI logs, and teardown proofs are organized in the [`Evidence-Data/`](Evidence-Data/) directory.
+
 
 ### Exercise 1: End-to-End Application & Observability Health
 * **RT-Helpdesk Web UI (`http://localhost:8000`):**
